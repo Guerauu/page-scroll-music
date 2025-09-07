@@ -22,6 +22,7 @@ export default {
         primary: {
           DEFAULT: "hsl(var(--primary))",
           foreground: "hsl(var(--primary-foreground))",
+          glow: "hsl(var(--primary-glow))",
         },
         secondary: {
           DEFAULT: "hsl(var(--secondary))",
@@ -47,6 +48,13 @@ export default {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        music: {
+          surface: "hsl(var(--music-surface))",
+          control: "hsl(var(--music-control))",
+          "control-active": "hsl(var(--music-control-active))",
+          indicator: "hsl(var(--music-indicator))",
+          shadow: "hsl(var(--music-shadow))",
+        },
         sidebar: {
           DEFAULT: "hsl(var(--sidebar-background))",
           foreground: "hsl(var(--sidebar-foreground))",
@@ -62,6 +70,18 @@ export default {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
+      },
+      backgroundImage: {
+        "gradient-music": "var(--gradient-music)",
+        "gradient-subtle": "var(--gradient-subtle)",
+      },
+      transitionTimingFunction: {
+        smooth: "var(--transition-smooth)",
+        page: "var(--transition-page)",
+      },
+      boxShadow: {
+        "music-soft": "0 4px 12px -2px hsl(var(--music-shadow) / 0.1)",
+        "music-medium": "0 8px 24px -4px hsl(var(--music-shadow) / 0.15)",
       },
       keyframes: {
         "accordion-down": {
