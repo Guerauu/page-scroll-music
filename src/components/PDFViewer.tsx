@@ -14,16 +14,16 @@ interface PDFViewerProps {
   onClose: () => void;
 }
 
-type ViewState = "single" | "overlap";
-
 export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [pdf, setPdf] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
-  const [currentPage, setCurrentPage] = useState(1);
+  const [currentView, setCurrentView] = useState(1); // Starts at 1
   const [totalPages, setTotalPages] = useState(0);
-  const [viewState, setViewState] = useState<ViewState>("single");
   const [scale, setScale] = useState(1.5);
   const [loading, setLoading] = useState(false);
+
+  // Calculate total views: for N pages, we have 2*N - 1 views
+  const getTotalViews = () => totalPages > 0 ? 2 * totalPages - 1 : 0;
 
   useEffect(() => {
     if (!file) return;
@@ -35,8 +35,7 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
         const pdfDoc = await pdfjsLib.getDocument(arrayBuffer).promise;
         setPdf(pdfDoc);
         setTotalPages(pdfDoc.numPages);
-        setCurrentPage(1);
-        setViewState("single");
+        setCurrentView(1);
         toast("Partitura carregada correctament!");
       } catch (error) {
         console.error("Error loading PDF:", error);
@@ -51,11 +50,10 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
 
   useEffect(() => {
     if (!pdf || !canvasRef.current) return;
+    renderCurrentView();
+  }, [pdf, currentView, scale]);
 
-    renderPage();
-  }, [pdf, currentPage, viewState, scale]);
-
-  const renderPage = async () => {
+  const renderCurrentView = async () => {
     if (!pdf || !canvasRef.current) return;
 
     try {
@@ -64,129 +62,137 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
       
       if (!context) return;
 
-      if (viewState === "single") {
-        // Render single page
-        const page = await pdf.getPage(currentPage);
-        const viewport = page.getViewport({ scale });
+      // Calculate which pages and halves to show
+      const { topPage, topHalf, bottomPage, bottomHalf } = getViewConfiguration(currentView);
+
+      // Get the pages we need
+      const pages = [];
+      if (topPage <= totalPages) {
+        pages.push(await pdf.getPage(topPage));
+      }
+      if (bottomPage <= totalPages && bottomPage !== topPage) {
+        pages.push(await pdf.getPage(bottomPage));
+      }
+
+      const viewport = pages[0].getViewport({ scale });
+      
+      // Set canvas size
+      canvas.height = viewport.height;
+      canvas.width = viewport.width;
+      
+      // Clear and set white background
+      context.fillStyle = "#ffffff";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Create temporary canvases for rendering
+      const tempCanvases = [];
+      for (let i = 0; i < pages.length; i++) {
+        const tempCanvas = document.createElement('canvas');
+        const tempContext = tempCanvas.getContext('2d');
+        if (!tempContext) continue;
+
+        const pageViewport = pages[i].getViewport({ scale });
+        tempCanvas.height = pageViewport.height;
+        tempCanvas.width = pageViewport.width;
         
-        canvas.height = viewport.height;
-        canvas.width = viewport.width;
+        tempContext.fillStyle = "#ffffff";
+        tempContext.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
         
-        context.fillStyle = "#ffffff";
-        context.fillRect(0, 0, canvas.width, canvas.height);
-        
-        await page.render({
-          canvasContext: context,
-          viewport: viewport,
-          canvas: canvas,
+        await pages[i].render({
+          canvasContext: tempContext,
+          viewport: pageViewport,
+          canvas: tempCanvas,
         }).promise;
         
-      } else {
-        // Render overlap: bottom half of previous page + top half of current page
-        const prevPage = await pdf.getPage(currentPage - 1);
-        const currPage = await pdf.getPage(currentPage);
+        tempCanvases.push(tempCanvas);
+      }
+
+      // Draw the halves
+      const halfHeight = canvas.height / 2;
+
+      // Draw top half
+      if (tempCanvases.length > 0) {
+        const sourceCanvas = topPage === bottomPage ? tempCanvases[0] : 
+                           (topPage < bottomPage ? tempCanvases[0] : 
+                           (tempCanvases.length > 1 ? tempCanvases[1] : tempCanvases[0]));
         
-        const prevViewport = prevPage.getViewport({ scale });
-        const currViewport = currPage.getViewport({ scale });
-        
-        // Set canvas size to accommodate both half pages
-        canvas.height = prevViewport.height;
-        canvas.width = Math.max(prevViewport.width, currViewport.width);
-        
-        context.fillStyle = "#ffffff";
-        context.fillRect(0, 0, canvas.width, canvas.height);
-        
-        // Create temporary canvases for each page
-        const tempCanvas1 = document.createElement('canvas');
-        const tempContext1 = tempCanvas1.getContext('2d');
-        const tempCanvas2 = document.createElement('canvas');
-        const tempContext2 = tempCanvas2.getContext('2d');
-        
-        if (!tempContext1 || !tempContext2) return;
-        
-        // Render previous page
-        tempCanvas1.height = prevViewport.height;
-        tempCanvas1.width = prevViewport.width;
-        tempContext1.fillStyle = "#ffffff";
-        tempContext1.fillRect(0, 0, tempCanvas1.width, tempCanvas1.height);
-        
-        await prevPage.render({
-          canvasContext: tempContext1,
-          viewport: prevViewport,
-          canvas: tempCanvas1,
-        }).promise;
-        
-        // Render current page
-        tempCanvas2.height = currViewport.height;
-        tempCanvas2.width = currViewport.width;
-        tempContext2.fillStyle = "#ffffff";
-        tempContext2.fillRect(0, 0, tempCanvas2.width, tempCanvas2.height);
-        
-        await currPage.render({
-          canvasContext: tempContext2,
-          viewport: currViewport,
-          canvas: tempCanvas2,
-        }).promise;
-        
-        // Combine: bottom half of previous page + top half of current page
-        const halfHeight = canvas.height / 2;
-        
-        // Draw bottom half of previous page on top
+        const sourceY = topHalf === 'top' ? 0 : halfHeight;
         context.drawImage(
-          tempCanvas1,
-          0, halfHeight, tempCanvas1.width, halfHeight,
+          sourceCanvas,
+          0, sourceY, sourceCanvas.width, halfHeight,
           0, 0, canvas.width, halfHeight
         );
+      }
+
+      // Draw bottom half
+      if (tempCanvases.length > 0) {
+        const sourceCanvas = topPage === bottomPage ? tempCanvases[0] : 
+                           (bottomPage < topPage ? tempCanvases[0] : 
+                           (tempCanvases.length > 1 ? tempCanvases[tempCanvases.length - 1] : tempCanvases[0]));
         
-        // Draw top half of current page on bottom
+        const sourceY = bottomHalf === 'top' ? 0 : halfHeight;
         context.drawImage(
-          tempCanvas2,
-          0, 0, tempCanvas2.width, halfHeight,
+          sourceCanvas,
+          0, sourceY, sourceCanvas.width, halfHeight,
           0, halfHeight, canvas.width, halfHeight
         );
       }
+
     } catch (error) {
-      console.error("Error rendering page:", error);
-      toast("Error mostrant la pàgina");
+      console.error("Error rendering view:", error);
+      toast("Error mostrant la vista");
+    }
+  };
+
+  const getViewConfiguration = (view: number) => {
+    if (view === 1) {
+      // First view: Top A + Bottom A
+      return { topPage: 1, topHalf: 'top', bottomPage: 1, bottomHalf: 'bottom' };
+    }
+    
+    if (view % 2 === 0) {
+      // Even views: Top B + Bottom A, Top C + Bottom B, etc.
+      const pageNum = Math.ceil(view / 2);
+      return { 
+        topPage: pageNum + 1, 
+        topHalf: 'top', 
+        bottomPage: pageNum, 
+        bottomHalf: 'bottom' 
+      };
+    } else {
+      // Odd views (>1): Top B + Bottom B, Top C + Bottom C, etc.
+      const pageNum = Math.ceil(view / 2);
+      return { 
+        topPage: pageNum, 
+        topHalf: 'top', 
+        bottomPage: pageNum, 
+        bottomHalf: 'bottom' 
+      };
     }
   };
 
   const handleCanvasClick = () => {
-    if (!pdf) return;
-
-    if (viewState === "single") {
-      // If not on last page, show overlap with next page
-      if (currentPage < totalPages) {
-        setCurrentPage(prev => prev + 1);
-        setViewState("overlap");
-      }
-    } else {
-      // From overlap, go to single view of current page
-      setViewState("single");
+    const totalViews = getTotalViews();
+    if (currentView < totalViews) {
+      setCurrentView(prev => prev + 1);
     }
   };
 
-  const goToPreviousPage = () => {
-    if (viewState === "overlap") {
-      setViewState("single");
-      setCurrentPage(prev => prev - 1);
-    } else if (currentPage > 1) {
-      setCurrentPage(prev => prev - 1);
-      setViewState("single");
+  const goToPreviousView = () => {
+    if (currentView > 1) {
+      setCurrentView(prev => prev - 1);
     }
   };
 
-  const goToNextPage = () => {
-    if (viewState === "single" && currentPage < totalPages) {
-      setCurrentPage(prev => prev + 1);
-      setViewState("overlap");
-    } else if (viewState === "overlap") {
-      setViewState("single");
+  const goToNextView = () => {
+    const totalViews = getTotalViews();
+    if (currentView < totalViews) {
+      setCurrentView(prev => prev + 1);
     }
   };
 
   const resetView = () => {
-    setViewState("single");
+    setCurrentView(1);
     setScale(1.5);
   };
 
@@ -198,17 +204,21 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
     setScale(prev => Math.max(prev - 0.25, 0.5));
   };
 
-  const getViewStateLabel = () => {
-    if (viewState === "single") return `Pàgina ${currentPage}`;
-    return `Pàg. ${currentPage - 1} (inf.) + Pàg. ${currentPage} (sup.)`;
+  const getViewDescription = () => {
+    const config = getViewConfiguration(currentView);
+    const topPageLetter = String.fromCharCode(64 + config.topPage); // A, B, C...
+    const bottomPageLetter = String.fromCharCode(64 + config.bottomPage);
+    
+    if (config.topPage === config.bottomPage) {
+      return `Pàg. ${topPageLetter} (sup. + inf.)`;
+    } else {
+      return `Pàg. ${topPageLetter} (sup.) + Pàg. ${bottomPageLetter} (inf.)`;
+    }
   };
 
   const getCurrentProgress = () => {
-    if (viewState === "single") {
-      return ((currentPage - 1) / totalPages) * 100;
-    } else {
-      return ((currentPage - 1.5) / totalPages) * 100;
-    }
+    const totalViews = getTotalViews();
+    return totalViews > 0 ? ((currentView - 1) / (totalViews - 1)) * 100 : 0;
   };
 
   if (!file) return null;
@@ -245,8 +255,8 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
       {/* Progress Bar */}
       <div className="px-4 py-2 bg-muted/50">
         <div className="flex items-center justify-between text-xs text-muted-foreground mb-2">
-          <span>{getViewStateLabel()}</span>
-          <span>{totalPages} pàgines</span>
+          <span>{getViewDescription()}</span>
+          <span>Vista {currentView} de {getTotalViews()}</span>
         </div>
         <Progress value={getCurrentProgress()} className="h-2" />
       </div>
@@ -268,11 +278,8 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
                 border: "1px solid hsl(var(--border))"
               }}
             />
-            {viewState === "overlap" && (
-              <div className="absolute top-2 right-2 bg-music-control-active text-primary-foreground px-3 py-1 rounded-full text-sm font-medium shadow-lg">
-                Solapament
-              </div>
-            )}
+            {/* Divider line to show halves */}
+            <div className="absolute top-1/2 left-0 right-0 h-px bg-primary/20 pointer-events-none" />
           </div>
         )}
       </div>
@@ -281,8 +288,8 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
       <div className="flex items-center justify-center gap-4 p-4 bg-card border-t shadow-music-soft">
         <Button
           variant="outline"
-          onClick={goToPreviousPage}
-          disabled={currentPage === 1 && viewState === "single"}
+          onClick={goToPreviousView}
+          disabled={currentView === 1}
           className="flex items-center gap-2 min-w-32"
         >
           <ChevronLeft className="h-4 w-4" />
@@ -293,16 +300,15 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
           variant="default"
           onClick={handleCanvasClick}
           className="flex items-center gap-2 min-w-40 bg-gradient-music"
-          disabled={currentPage === totalPages && viewState === "single"}
+          disabled={currentView === getTotalViews()}
         >
-          {viewState === "single" && currentPage < totalPages ? "Veure Solapament" : 
-           viewState === "overlap" ? "Veure Pàgina Completa" : "Final"}
+          {currentView < getTotalViews() ? "Següent Vista" : "Final"}
         </Button>
         
         <Button
           variant="outline"
-          onClick={goToNextPage}
-          disabled={currentPage === totalPages && viewState === "single"}
+          onClick={goToNextView}
+          disabled={currentView === getTotalViews()}
           className="flex items-center gap-2 min-w-32"
         >
           Següent
