@@ -7,12 +7,23 @@ import { Music, Github, Heart } from "lucide-react";
 const Index = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [showViewer, setShowViewer] = useState(false);
+  const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
 
   const handleFileSelect = (file: File | null) => {
-    setSelectedFile(file);
     if (file) {
-      setShowViewer(true);
+      setUploadedFiles(prev => {
+        const exists = prev.some(f => f.name === file.name && f.size === file.size);
+        if (!exists) {
+          return [...prev, file];
+        }
+        return prev;
+      });
     }
+  };
+
+  const handleFilePlay = (file: File) => {
+    setSelectedFile(file);
+    setShowViewer(true);
   };
 
   const handleCloseViewer = () => {
@@ -50,62 +61,45 @@ const Index = () => {
       </header>
 
       {/* Main Content */}
-      <main className="container mx-auto px-4 py-12">
-        <div className="text-center mb-12">
-          <h2 className="text-4xl md:text-5xl font-bold mb-4 bg-gradient-music bg-clip-text text-transparent">
-            Llegeix Partitures com mai abans
-          </h2>
-          <p className="text-xl text-muted-foreground max-w-2xl mx-auto mb-8">
-            Navegació intel·ligent per mitges pàgines. Perfect per a músics que necessiten més temps per llegir sense perdre el compàs.
-          </p>
-          
-          <div className="grid md:grid-cols-3 gap-6 max-w-4xl mx-auto mb-12">
-            <div className="p-6 bg-card rounded-xl shadow-music-soft">
-              <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mb-4 mx-auto">
-                <span className="text-2xl">👆</span>
-              </div>
-              <h3 className="font-semibold mb-2">Navegació Intel·ligent</h3>
-              <p className="text-sm text-muted-foreground">
-                Clica per veure primer la meitat superior, després la inferior, i finalment la següent pàgina
-              </p>
-            </div>
-            
-            <div className="p-6 bg-card rounded-xl shadow-music-soft">
-              <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mb-4 mx-auto">
-                <span className="text-2xl">📱</span>
-              </div>
-              <h3 className="font-semibold mb-2">Optimitzat per Tablets</h3>
-              <p className="text-sm text-muted-foreground">
-                Dissenyat específicament per a la lectura musical en dispositius tàctils
-              </p>
-            </div>
-            
-            <div className="p-6 bg-card rounded-xl shadow-music-soft">
-              <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mb-4 mx-auto">
-                <span className="text-2xl">🎵</span>
-              </div>
-              <h3 className="font-semibold mb-2">Fet per Músics</h3>
-              <p className="text-sm text-muted-foreground">
-                Soluciona el problema de no tenir temps per passar pàgina mentre toques
-              </p>
-            </div>
+      <main className="container mx-auto px-4 py-8">
+        <div className="max-w-4xl mx-auto space-y-8">
+          {/* File Uploader Section */}
+          <div className="bg-card rounded-xl shadow-music-soft p-6">
+            <h2 className="text-xl font-semibold mb-4">Afegir Partitures</h2>
+            <FileUploader onFileSelect={handleFileSelect} selectedFile={null} />
           </div>
+
+          {/* Files List Section */}
+          {uploadedFiles.length > 0 && (
+            <div className="bg-card rounded-xl shadow-music-soft p-6">
+              <h2 className="text-xl font-semibold mb-4">Les meves Partitures</h2>
+              <div className="grid gap-3">
+                {uploadedFiles.map((file, index) => (
+                  <div key={index} className="flex items-center justify-between p-4 bg-muted/50 rounded-lg hover:bg-muted/70 transition-colors">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
+                        <Music className="h-5 w-5 text-primary" />
+                      </div>
+                      <div>
+                        <p className="font-medium">{file.name}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {(file.size / 1024 / 1024).toFixed(1)} MB
+                        </p>
+                      </div>
+                    </div>
+                    <Button 
+                      variant="music" 
+                      size="sm"
+                      onClick={() => handleFilePlay(file)}
+                    >
+                      Tocar
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
-
-        <FileUploader onFileSelect={handleFileSelect} selectedFile={selectedFile} />
-
-        {selectedFile && (
-          <div className="text-center mt-8">
-            <Button 
-              size="lg" 
-              variant="music"
-              onClick={() => setShowViewer(true)}
-              className="shadow-music-medium"
-            >
-              Obrir Partitura
-            </Button>
-          </div>
-        )}
       </main>
 
       {/* Footer */}
