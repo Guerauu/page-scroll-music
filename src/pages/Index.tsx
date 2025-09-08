@@ -69,13 +69,7 @@ const Index = () => {
                 <p className="text-sm text-muted-foreground">Visualitzador de partitures</p>
               </div>
             </div>
-            
-            <Button variant="ghost" size="sm" asChild>
-              <a href="https://github.com" target="_blank" rel="noopener noreferrer">
-                <Github className="h-4 w-4" />
-                Codi Font
-              </a>
-            </Button>
+
           </div>
         </div>
       </header>
