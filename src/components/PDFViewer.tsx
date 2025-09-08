@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import * as pdfjsLib from "pdfjs-dist";
 import "pdfjs-dist/build/pdf.worker.min.mjs";
 import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
+import { Slider } from "@/components/ui/slider";
 import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 
@@ -270,13 +270,20 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
         </div>
       </div>
 
-      {/* Progress Bar */}
+      {/* Progress Slider */}
       <div className="px-4 py-2 bg-muted/50">
         <div className="flex items-center justify-between text-xs text-muted-foreground mb-2">
           <span>{getViewDescription()}</span>
           <span>Vista {currentView} de {getTotalViews()}</span>
         </div>
-        <Progress value={getCurrentProgress()} className="h-2" />
+        <Slider 
+          value={[currentView]} 
+          onValueChange={(value) => setCurrentView(value[0])}
+          max={getTotalViews()} 
+          min={1} 
+          step={1} 
+          className="h-2"
+        />
       </div>
 
       {/* PDF Canvas Container */}
