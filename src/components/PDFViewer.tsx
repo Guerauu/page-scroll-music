@@ -181,27 +181,60 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
   };
 
   const renderMarkers = (context: CanvasRenderingContext2D, canvasWidth: number, canvasHeight: number) => {
-    const currentViewMarkers = markers.filter(marker => marker.view === currentView);
+    // Colors vius per als marcadors
+    const markerColors = [
+      '#3B82F6', // Blau
+      '#10B981', // Verd
+      '#F59E0B', // Groc
+      '#F97316', // Taronja
+      '#EF4444', // Vermell
+      '#8B5CF6', // Púrpura
+      '#06B6D4', // Cian
+      '#84CC16', // Lima
+      '#F472B6', // Rosa
+      '#6366F1'  // Índigo
+    ];
     
-    currentViewMarkers.forEach(marker => {
+    // Marcadors d'origen (vista actual)
+    const originMarkers = markers.filter(marker => marker.view === currentView);
+    
+    originMarkers.forEach((marker, index) => {
       const x = marker.x * canvasWidth;
       const y = marker.y * canvasHeight;
       
       // Draw vertical line (1cm ≈ 37.8 pixels at 96 DPI)
       const lineHeight = Math.min(37.8, canvasHeight * 0.1);
+      const color = markerColors[index % markerColors.length];
       
-      context.strokeStyle = "hsl(var(--primary))";
+      context.strokeStyle = color;
       context.lineWidth = 3;
       context.beginPath();
       context.moveTo(x, y - lineHeight / 2);
       context.lineTo(x, y + lineHeight / 2);
       context.stroke();
+    });
+
+    // Marcadors de destí (marcadors que apunten a la vista actual)
+    const targetMarkers = markers.filter(marker => marker.targetView === currentView);
+    
+    targetMarkers.forEach((marker, index) => {
+      // Trobar l'índex del marcador original per mantenir el mateix color
+      const originalIndex = markers.findIndex(m => m.id === marker.id);
+      const color = markerColors[originalIndex % markerColors.length];
       
-      // Draw clickable area indicator (circle)
-      context.fillStyle = "hsl(var(--primary) / 0.3)";
+      // Posició del marcador de destí: centrat horizontalment a la vista
+      const x = canvasWidth * 0.9; // 90% de l'ample (lateral dret)
+      const y = canvasHeight * 0.1 + (index * 40); // Espaiats verticalment
+      
+      // Draw vertical line
+      const lineHeight = Math.min(37.8, canvasHeight * 0.1);
+      
+      context.strokeStyle = color;
+      context.lineWidth = 3;
       context.beginPath();
-      context.arc(x, y, 15, 0, 2 * Math.PI);
-      context.fill();
+      context.moveTo(x, y);
+      context.lineTo(x, y + lineHeight);
+      context.stroke();
     });
   };
 
