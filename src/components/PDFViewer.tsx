@@ -129,7 +129,7 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
       // Draw bottom half
       if (bottomPage <= totalPages && renderedPages.has(bottomPage)) {
         const sourceCanvas = renderedPages.get(bottomPage);
-        const sourceY = bottomHalf === 'top' ? 0 : halfHeight;
+        const sourceY = bottomHalf === 'bottom' ? halfHeight : 0;
         context.drawImage(
           sourceCanvas,
           0, sourceY, sourceCanvas.width, halfHeight,
@@ -154,7 +154,7 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
     const isEvenView = view % 2 === 0;
     
     if (isEvenView) {
-      // Vistes pars (2, 4, 6...): Pàgina següent superior + Pàgina actual inferior
+      // Vistes pars (2, 4, 6...): Primera meitat de la següent + segona meitat de l'actual
       // Vista 2: B superior + A inferior
       // Vista 4: C superior + B inferior
       return { 
@@ -164,7 +164,7 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
         bottomHalf: 'bottom' as const 
       };
     } else {
-      // Vistes imparells (3, 5, 7...): Pàgina actual superior + Pàgina actual inferior
+      // Vistes imparells (3, 5, 7...): Primera meitat de l'actual + segona meitat de l'actual
       // Vista 3: B superior + B inferior
       // Vista 5: C superior + C inferior
       const currentPage = pageIndex + 1;
@@ -177,10 +177,16 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
     }
   };
 
-  const handleCanvasClick = () => {
-    const totalViews = getTotalViews();
-    if (currentView < totalViews) {
-      setCurrentView(prev => prev + 1);
+  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = e.currentTarget;
+    const rect = canvas.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const isRightHalf = clickX > rect.width / 2;
+    
+    if (isRightHalf) {
+      goToNextView();
+    } else {
+      goToPreviousView();
     }
   };
 
@@ -296,37 +302,6 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
         )}
       </div>
 
-      {/* Bottom Controls */}
-      <div className="flex items-center justify-center gap-4 p-4 bg-card border-t shadow-music-soft">
-        <Button
-          variant="outline"
-          onClick={goToPreviousView}
-          disabled={currentView === 1}
-          className="flex items-center gap-2 min-w-32"
-        >
-          <ChevronLeft className="h-4 w-4" />
-          Anterior
-        </Button>
-        
-        <Button
-          variant="default"
-          onClick={handleCanvasClick}
-          className="flex items-center gap-2 min-w-40 bg-gradient-music"
-          disabled={currentView === getTotalViews()}
-        >
-          {currentView < getTotalViews() ? "Següent Vista" : "Final"}
-        </Button>
-        
-        <Button
-          variant="outline"
-          onClick={goToNextView}
-          disabled={currentView === getTotalViews()}
-          className="flex items-center gap-2 min-w-32"
-        >
-          Següent
-          <ChevronRight className="h-4 w-4" />
-        </Button>
-      </div>
     </div>
   );
 };

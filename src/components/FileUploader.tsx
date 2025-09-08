@@ -18,10 +18,6 @@ export const FileUploader = ({ onFileSelect, selectedFile }: FileUploaderProps) 
       return;
     }
 
-    if (file.size > 50 * 1024 * 1024) { // 50MB limit
-      toast("El fitxer és massa gran. Màxim 50MB");
-      return;
-    }
 
     onFileSelect(file);
     toast(`Fitxer seleccionat: ${file.name}`);
@@ -84,7 +80,7 @@ export const FileUploader = ({ onFileSelect, selectedFile }: FileUploaderProps) 
                 Arrossega un fitxer PDF aquí o fes clic per seleccionar-ne un
               </p>
               <div className="text-sm text-muted-foreground">
-                Màxim 50MB • Format PDF
+                Format PDF
               </div>
             </div>
 
