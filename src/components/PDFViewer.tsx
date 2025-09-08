@@ -3,11 +3,19 @@ import * as pdfjsLib from "pdfjs-dist";
 import "pdfjs-dist/build/pdf.worker.min.mjs";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
-import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, RotateCcw } from "lucide-react";
+import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, RotateCcw, Menu, X, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 // Set worker path
 pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+
+interface Marker {
+  id: string;
+  view: number;
+  x: number; // posició x relativa (0-1)
+  y: number; // posició y relativa (0-1)
+  targetView: number;
+}
 
 interface PDFViewerProps {
   file: File | null;
@@ -16,14 +24,40 @@ interface PDFViewerProps {
 
 export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [pdf, setPdf] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
   const [currentView, setCurrentView] = useState(1); // Starts at 1
   const [totalPages, setTotalPages] = useState(0);
   const [scale, setScale] = useState(1.5);
   const [loading, setLoading] = useState(false);
+  
+  // Marker states
+  const [markers, setMarkers] = useState<Marker[]>([]);
+  const [isMarkersMenuOpen, setIsMarkersMenuOpen] = useState(false);
+  const [insertMode, setInsertMode] = useState<'none' | 'origin' | 'target'>('none');
+  const [pendingOrigin, setPendingOrigin] = useState<{view: number, x: number, y: number} | null>(null);
 
   // Calculate total views: for N pages, we have 2*N - 1 views
   const getTotalViews = () => totalPages > 0 ? 2 * totalPages - 1 : 0;
+
+  // Load markers from localStorage
+  useEffect(() => {
+    if (!file) return;
+    const savedMarkers = localStorage.getItem(`markers_${file.name}`);
+    if (savedMarkers) {
+      try {
+        setMarkers(JSON.parse(savedMarkers));
+      } catch (error) {
+        console.error("Error loading markers:", error);
+      }
+    }
+  }, [file]);
+
+  // Save markers to localStorage
+  useEffect(() => {
+    if (!file || markers.length === 0) return;
+    localStorage.setItem(`markers_${file.name}`, JSON.stringify(markers));
+  }, [markers, file]);
 
   useEffect(() => {
     if (!file) return;
@@ -51,7 +85,7 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
   useEffect(() => {
     if (!pdf || !canvasRef.current) return;
     renderCurrentView();
-  }, [pdf, currentView, scale]);
+  }, [pdf, currentView, scale, markers]);
 
   const renderCurrentView = async () => {
     if (!pdf || !canvasRef.current) return;
@@ -137,10 +171,38 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
         );
       }
 
+      // Draw markers for current view
+      renderMarkers(context, canvas.width, canvas.height);
+
     } catch (error) {
       console.error("Error rendering view:", error);
       toast("Error mostrant la vista");
     }
+  };
+
+  const renderMarkers = (context: CanvasRenderingContext2D, canvasWidth: number, canvasHeight: number) => {
+    const currentViewMarkers = markers.filter(marker => marker.view === currentView);
+    
+    currentViewMarkers.forEach(marker => {
+      const x = marker.x * canvasWidth;
+      const y = marker.y * canvasHeight;
+      
+      // Draw vertical line (1cm ≈ 37.8 pixels at 96 DPI)
+      const lineHeight = Math.min(37.8, canvasHeight * 0.1);
+      
+      context.strokeStyle = "hsl(var(--primary))";
+      context.lineWidth = 3;
+      context.beginPath();
+      context.moveTo(x, y - lineHeight / 2);
+      context.lineTo(x, y + lineHeight / 2);
+      context.stroke();
+      
+      // Draw clickable area indicator (circle)
+      context.fillStyle = "hsl(var(--primary) / 0.3)";
+      context.beginPath();
+      context.arc(x, y, 15, 0, 2 * Math.PI);
+      context.fill();
+    });
   };
 
   const getViewConfiguration = (view: number) => {
@@ -181,8 +243,54 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
     const canvas = e.currentTarget;
     const rect = canvas.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
-    const isRightHalf = clickX > rect.width / 2;
+    const clickY = e.clientY - rect.top;
     
+    // Convert to relative coordinates
+    const relativeX = clickX / rect.width;
+    const relativeY = clickY / rect.height;
+    
+    // Check if we're in insert mode
+    if (insertMode === 'origin') {
+      setPendingOrigin({ view: currentView, x: relativeX, y: relativeY });
+      setInsertMode('target');
+      toast("Marcador d'origen col·locat. Ara clica on vols anar.");
+      return;
+    }
+    
+    if (insertMode === 'target' && pendingOrigin) {
+      const newMarker: Marker = {
+        id: Date.now().toString(),
+        view: pendingOrigin.view,
+        x: pendingOrigin.x,
+        y: pendingOrigin.y,
+        targetView: currentView
+      };
+      setMarkers(prev => [...prev, newMarker]);
+      setPendingOrigin(null);
+      setInsertMode('none');
+      toast("Marcador creat correctament!");
+      return;
+    }
+    
+    // Check if we clicked on a marker
+    const clickedMarker = markers.find(marker => {
+      if (marker.view !== currentView) return false;
+      
+      const markerX = marker.x * rect.width;
+      const markerY = marker.y * rect.height;
+      const distance = Math.sqrt(Math.pow(clickX - markerX, 2) + Math.pow(clickY - markerY, 2));
+      
+      return distance <= 20; // 20px clickable radius
+    });
+    
+    if (clickedMarker) {
+      setCurrentView(clickedMarker.targetView);
+      toast(`Saltant a vista ${clickedMarker.targetView}`);
+      return;
+    }
+    
+    // Normal navigation
+    const isRightHalf = clickX > rect.width / 2;
     if (isRightHalf) {
       goToNextView();
     } else {
@@ -239,12 +347,95 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
     return totalViews > 0 ? ((currentView - 1) / (totalViews - 1)) * 100 : 0;
   };
 
+  const startMarkerInsertion = () => {
+    setInsertMode('origin');
+    toast("Clica on vols col·locar el marcador d'origen");
+  };
+
+  const cancelMarkerInsertion = () => {
+    setInsertMode('none');
+    setPendingOrigin(null);
+    toast("Inserció de marcador cancel·lada");
+  };
+
+  const deleteMarker = (markerId: string) => {
+    setMarkers(prev => prev.filter(marker => marker.id !== markerId));
+    toast("Marcador eliminat");
+  };
+
   if (!file) return null;
 
   return (
-    <div className="flex flex-col h-screen bg-music-surface">
-      {/* Header Controls */}
-      <div className="flex items-center justify-between p-4 bg-card border-b shadow-music-soft">
+    <div className="flex h-screen bg-music-surface">
+      {/* Floating Menu Button */}
+      <Button
+        variant="outline"
+        size="sm"
+        className="fixed top-4 left-4 z-50 shadow-lg"
+        onClick={() => setIsMarkersMenuOpen(!isMarkersMenuOpen)}
+      >
+        {isMarkersMenuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
+      </Button>
+
+      {/* Markers Menu */}
+      <div className={`fixed left-0 top-0 h-full w-80 bg-card border-r shadow-lg transition-transform duration-300 z-40 ${
+        isMarkersMenuOpen ? 'translate-x-0' : '-translate-x-full'
+      }`}>
+        <div className="p-4 border-b">
+          <h3 className="font-semibold">Marcadors de Repetició</h3>
+        </div>
+        
+        <div className="p-4 space-y-4">
+          {/* Insert Marker Button */}
+          <div className="space-y-2">
+            {insertMode === 'none' ? (
+              <Button onClick={startMarkerInsertion} className="w-full">
+                <Plus className="h-4 w-4 mr-2" />
+                Inserir Marcador
+              </Button>
+            ) : (
+              <div className="space-y-2">
+                <div className="text-sm text-muted-foreground">
+                  {insertMode === 'origin' ? 'Clica on vols col·locar l\'origen' : 'Clica on vols anar (destí)'}
+                </div>
+                <Button onClick={cancelMarkerInsertion} variant="outline" className="w-full">
+                  Cancel·lar
+                </Button>
+              </div>
+            )}
+          </div>
+
+          {/* Markers List */}
+          <div className="space-y-2">
+            <h4 className="text-sm font-medium">Marcadors existents:</h4>
+            {markers.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No hi ha marcadors</p>
+            ) : (
+              <div className="space-y-2 max-h-96 overflow-y-auto">
+                {markers.map(marker => (
+                  <div key={marker.id} className="flex items-center justify-between p-2 bg-muted rounded">
+                    <div className="text-sm">
+                      <div>Vista {marker.view} → Vista {marker.targetView}</div>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => deleteMarker(marker.id)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <div className="flex flex-col flex-1">
+        {/* Header Controls */}
+        <div className="flex items-center justify-between p-4 bg-card border-b shadow-music-soft">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="sm" onClick={onClose}>
             ← Tornar
@@ -286,8 +477,8 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
         />
       </div>
 
-      {/* PDF Canvas Container */}
-      <div className="flex-1 flex items-center justify-center p-4 overflow-auto">
+        {/* PDF Canvas Container */}
+        <div ref={containerRef} className="flex-1 flex items-center justify-center p-4 overflow-auto">
         {loading ? (
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
@@ -306,9 +497,9 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
             {/* Divider line to show halves */}
             <div className="absolute top-1/2 left-0 right-0 h-px bg-primary/20 pointer-events-none" />
           </div>
-        )}
+          )}
+        </div>
       </div>
-
     </div>
   );
 };
