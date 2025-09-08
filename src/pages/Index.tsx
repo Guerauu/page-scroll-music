@@ -65,8 +65,8 @@ const Index = () => {
                 <Music className="h-6 w-6 text-primary-foreground" />
               </div>
               <div>
-                <h1 className="text-xl font-bold">PartituraViewer</h1>
-                <p className="text-sm text-muted-foreground">Visualitzador intel·ligent de partitures</p>
+                <h1 className="text-xl font-bold">MuseScroll</h1>
+                <p className="text-sm text-muted-foreground">Visualitzador de partitures</p>
               </div>
             </div>
             
@@ -147,14 +147,6 @@ const Index = () => {
         </div>
       </main>
 
-      {/* Footer */}
-      <footer className="border-t bg-card/50 backdrop-blur-sm mt-16">
-        <div className="container mx-auto px-4 py-6">
-          <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-            Fet amb <Heart className="h-4 w-4 text-red-500" /> per a la comunitat musical
-          </div>
-        </div>
-      </footer>
     </div>
   );
 };
