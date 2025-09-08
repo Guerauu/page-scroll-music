@@ -17,6 +17,7 @@ interface Marker {
   targetView: number;
   targetX: number; // posició x relativa (0-1) destí
   targetY: number; // posició y relativa (0-1) destí
+  colorIndex: number;
 }
 
 interface PDFViewerProps {
@@ -200,13 +201,13 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
     // Marcadors d'origen (vista actual)
     const originMarkers = markers.filter(marker => marker.view === currentView);
     
-    originMarkers.forEach((marker, index) => {
+    originMarkers.forEach((marker) => {
       const x = marker.x * canvasWidth;
       const y = marker.y * canvasHeight;
       
       // Draw vertical line (1cm ≈ 37.8 pixels at 96 DPI)
       const lineHeight = Math.min(37.8, canvasHeight * 0.1);
-      const colorHSL = markerColors[index % markerColors.length];
+      const colorHSL = markerColors[marker.colorIndex % markerColors.length];
       
       context.strokeStyle = `hsl(${colorHSL})`;
       context.lineWidth = 3;
@@ -221,8 +222,9 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
     
     targetMarkers.forEach((marker) => {
       // Trobar l'índex del marcador original per mantenir el mateix color
-      const originalIndex = markers.findIndex(m => m.id === marker.id);
-      const colorHSL = markerColors[originalIndex % markerColors.length];
+      // const originalIndex = markers.findIndex(m => m.id === marker.id);
+      // const colorHSL = markerColors[originalIndex % markerColors.length];
+      const colorHSL = markerColors[marker.colorIndex % markerColors.length];
       
       // Posició del marcador de destí: on va clicar l'usuari
       const x = marker.targetX * canvasWidth;
@@ -300,7 +302,8 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
         y: pendingOrigin.y,
         targetView: currentView,
         targetX: relativeX,
-        targetY: relativeY
+        targetY: relativeY,
+        colorIndex: markers.length
       };
       setMarkers(prev => [...prev, newMarker]);
       setPendingOrigin(null);
