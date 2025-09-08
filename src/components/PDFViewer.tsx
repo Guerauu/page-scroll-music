@@ -67,14 +67,20 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
 
       // Get the pages we need
       const pages = [];
-      if (topPage <= totalPages) {
-        pages.push(await pdf.getPage(topPage));
-      }
-      if (bottomPage <= totalPages && bottomPage !== topPage) {
-        pages.push(await pdf.getPage(bottomPage));
+      const pageNumbers = [topPage, bottomPage].filter((page, index, self) => 
+        page <= totalPages && self.indexOf(page) === index
+      );
+
+      for (const pageNum of pageNumbers) {
+        pages.push({
+          page: await pdf.getPage(pageNum),
+          pageNumber: pageNum
+        });
       }
 
-      const viewport = pages[0].getViewport({ scale });
+      if (pages.length === 0) return;
+
+      const viewport = pages[0].page.getViewport({ scale });
       
       // Set canvas size
       canvas.height = viewport.height;
@@ -85,37 +91,33 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
       context.fillRect(0, 0, canvas.width, canvas.height);
 
       // Create temporary canvases for rendering
-      const tempCanvases = [];
-      for (let i = 0; i < pages.length; i++) {
+      const renderedPages = new Map();
+      
+      for (const { page, pageNumber } of pages) {
         const tempCanvas = document.createElement('canvas');
         const tempContext = tempCanvas.getContext('2d');
         if (!tempContext) continue;
 
-        const pageViewport = pages[i].getViewport({ scale });
+        const pageViewport = page.getViewport({ scale });
         tempCanvas.height = pageViewport.height;
         tempCanvas.width = pageViewport.width;
         
         tempContext.fillStyle = "#ffffff";
         tempContext.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
         
-        await pages[i].render({
+        await page.render({
           canvasContext: tempContext,
           viewport: pageViewport,
-          canvas: tempCanvas,
         }).promise;
         
-        tempCanvases.push(tempCanvas);
+        renderedPages.set(pageNumber, tempCanvas);
       }
 
-      // Draw the halves
       const halfHeight = canvas.height / 2;
 
       // Draw top half
-      if (tempCanvases.length > 0) {
-        const sourceCanvas = topPage === bottomPage ? tempCanvases[0] : 
-                           (topPage < bottomPage ? tempCanvases[0] : 
-                           (tempCanvases.length > 1 ? tempCanvases[1] : tempCanvases[0]));
-        
+      if (topPage <= totalPages && renderedPages.has(topPage)) {
+        const sourceCanvas = renderedPages.get(topPage);
         const sourceY = topHalf === 'top' ? 0 : halfHeight;
         context.drawImage(
           sourceCanvas,
@@ -125,11 +127,8 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
       }
 
       // Draw bottom half
-      if (tempCanvases.length > 0) {
-        const sourceCanvas = topPage === bottomPage ? tempCanvases[0] : 
-                           (bottomPage < topPage ? tempCanvases[0] : 
-                           (tempCanvases.length > 1 ? tempCanvases[tempCanvases.length - 1] : tempCanvases[0]));
-        
+      if (bottomPage <= totalPages && renderedPages.has(bottomPage)) {
+        const sourceCanvas = renderedPages.get(bottomPage);
         const sourceY = bottomHalf === 'top' ? 0 : halfHeight;
         context.drawImage(
           sourceCanvas,
@@ -146,27 +145,34 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
 
   const getViewConfiguration = (view: number) => {
     if (view === 1) {
-      // First view: Top A + Bottom A
-      return { topPage: 1, topHalf: 'top', bottomPage: 1, bottomHalf: 'bottom' };
+      // Vista 1: A superior + A inferior
+      return { topPage: 1, topHalf: 'top' as const, bottomPage: 1, bottomHalf: 'bottom' as const };
     }
     
-    if (view % 2 === 0) {
-      // Even views: Top B + Bottom A, Top C + Bottom B, etc.
-      const pageNum = Math.ceil(view / 2);
+    // Per a vistes >= 2, calculem la pàgina base
+    const pageIndex = Math.floor((view - 2) / 2) + 1; // Pàgina actual (A=1, B=2, C=3...)
+    const isEvenView = view % 2 === 0;
+    
+    if (isEvenView) {
+      // Vistes pars (2, 4, 6...): Pàgina següent superior + Pàgina actual inferior
+      // Vista 2: B superior + A inferior
+      // Vista 4: C superior + B inferior
       return { 
-        topPage: pageNum + 1, 
-        topHalf: 'top', 
-        bottomPage: pageNum, 
-        bottomHalf: 'bottom' 
+        topPage: pageIndex + 1, 
+        topHalf: 'top' as const, 
+        bottomPage: pageIndex, 
+        bottomHalf: 'bottom' as const 
       };
     } else {
-      // Odd views (>1): Top B + Bottom B, Top C + Bottom C, etc.
-      const pageNum = Math.ceil(view / 2);
+      // Vistes imparells (3, 5, 7...): Pàgina actual superior + Pàgina actual inferior
+      // Vista 3: B superior + B inferior
+      // Vista 5: C superior + C inferior
+      const currentPage = pageIndex + 1;
       return { 
-        topPage: pageNum, 
-        topHalf: 'top', 
-        bottomPage: pageNum, 
-        bottomHalf: 'bottom' 
+        topPage: currentPage, 
+        topHalf: 'top' as const, 
+        bottomPage: currentPage, 
+        bottomHalf: 'bottom' as const 
       };
     }
   };
@@ -206,6 +212,12 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
 
   const getViewDescription = () => {
     const config = getViewConfiguration(currentView);
+    
+    // Assegurem que les pàgines existeixen abans de mostrar la descripció
+    if (config.topPage > totalPages || config.bottomPage > totalPages) {
+      return `Vista ${currentView}`;
+    }
+    
     const topPageLetter = String.fromCharCode(64 + config.topPage); // A, B, C...
     const bottomPageLetter = String.fromCharCode(64 + config.bottomPage);
     
