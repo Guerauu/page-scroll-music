@@ -411,7 +411,7 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
       <Button
         variant="outline"
         size="sm"
-        className="fixed top-4 left-4 z-50 shadow-lg"
+        className="fixed top-4 right-4 z-50 shadow-lg"
         onClick={() => setIsMarkersMenuOpen(!isMarkersMenuOpen)}
       >
         {isMarkersMenuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
