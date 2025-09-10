@@ -6,10 +6,11 @@ import { toast } from "sonner";
 
 interface FileUploaderProps {
   onFileSelect: (file: File) => void;
+  onFilesSelect: (files: File[]) => void;
   selectedFile: File | null;
 }
 
-export const FileUploader = ({ onFileSelect, selectedFile }: FileUploaderProps) => {
+export const FileUploader = ({ onFileSelect, onFilesSelect, selectedFile }: FileUploaderProps) => {
   const [dragActive, setDragActive] = useState(false);
 
   const handleFileSelect = useCallback((file: File) => {
@@ -46,6 +47,21 @@ export const FileUploader = ({ onFileSelect, selectedFile }: FileUploaderProps) 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       handleFileSelect(e.target.files[0]);
+    }
+  };
+
+  const handleFolderSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      const files = Array.from(e.target.files);
+      const pdfFiles = files.filter(file => file.type === "application/pdf");
+      
+      if (pdfFiles.length === 0) {
+        toast("No s'han trobat fitxers PDF a la carpeta seleccionada");
+        return;
+      }
+
+      onFilesSelect(pdfFiles);
+      toast(`${pdfFiles.length} fitxers PDF carregats de la carpeta`);
     }
   };
 
@@ -92,6 +108,13 @@ export const FileUploader = ({ onFileSelect, selectedFile }: FileUploaderProps) 
               >
                 Seleccionar Fitxer
               </Button>
+              <Button 
+                size="lg" 
+                variant="outline"
+                onClick={() => document.getElementById("folder-upload")?.click()}
+              >
+                Seleccionar Carpeta
+              </Button>
             </div>
 
             <input
@@ -99,6 +122,13 @@ export const FileUploader = ({ onFileSelect, selectedFile }: FileUploaderProps) 
               type="file"
               accept=".pdf"
               onChange={handleInputChange}
+              className="hidden"
+            />
+            <input
+              id="folder-upload"
+              type="file"
+              {...({ webkitdirectory: "" } as any)}
+              onChange={handleFolderSelect}
               className="hidden"
             />
           </div>

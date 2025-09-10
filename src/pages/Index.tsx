@@ -21,6 +21,19 @@ const Index = () => {
     }
   };
 
+  const handleFilesSelect = (files: File[]) => {
+    setUploadedFiles(prev => {
+      const newFiles = [...prev];
+      files.forEach(file => {
+        const exists = newFiles.some(f => f.name === file.name && f.size === file.size);
+        if (!exists) {
+          newFiles.push(file);
+        }
+      });
+      return newFiles;
+    });
+  };
+
   const handleFilePlay = (file: File) => {
     setSelectedFile(file);
     setShowViewer(true);
@@ -80,7 +93,11 @@ const Index = () => {
           {/* File Uploader Section */}
           <div className="bg-card rounded-xl shadow-music-soft p-6">
             <h2 className="text-xl font-semibold mb-4">Afegir Partitures</h2>
-            <FileUploader onFileSelect={handleFileSelect} selectedFile={null} />
+            <FileUploader 
+              onFileSelect={handleFileSelect} 
+              onFilesSelect={handleFilesSelect}
+              selectedFile={null} 
+            />
           </div>
 
           {/* Files List Section */}
