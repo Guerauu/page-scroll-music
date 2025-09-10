@@ -1,13 +1,87 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { FileUploader } from "@/components/FileUploader";
 import { PDFViewer } from "@/components/PDFViewer";
 import { Button } from "@/components/ui/button";
-import { Music, Github, Heart, ChevronUp, ChevronDown } from "lucide-react";
+import { Music, Github, Heart, ChevronUp, ChevronDown, X } from "lucide-react";
+
+interface StoredFile {
+  name: string;
+  size: number;
+  type: string;
+  data: string; // base64
+  lastModified: number;
+}
 
 const Index = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [showViewer, setShowViewer] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
+
+  // Load files from localStorage on component mount
+  useEffect(() => {
+    const loadStoredFiles = async () => {
+      try {
+        const storedFiles = localStorage.getItem('musescroll-files');
+        if (storedFiles) {
+          const parsedFiles: StoredFile[] = JSON.parse(storedFiles);
+          const files: File[] = [];
+          
+          for (const storedFile of parsedFiles) {
+            // Convert base64 back to File
+            const response = await fetch(storedFile.data);
+            const blob = await response.blob();
+            const file = new File([blob], storedFile.name, {
+              type: storedFile.type,
+              lastModified: storedFile.lastModified
+            });
+            files.push(file);
+          }
+          
+          setUploadedFiles(files);
+        }
+      } catch (error) {
+        console.error('Error loading stored files:', error);
+      }
+    };
+
+    loadStoredFiles();
+  }, []);
+
+  // Save files to localStorage whenever uploadedFiles changes
+  useEffect(() => {
+    const saveFilesToStorage = async () => {
+      try {
+        const filesToStore: StoredFile[] = [];
+        
+        for (const file of uploadedFiles) {
+          const reader = new FileReader();
+          await new Promise((resolve) => {
+            reader.onload = () => {
+              filesToStore.push({
+                name: file.name,
+                size: file.size,
+                type: file.type,
+                data: reader.result as string,
+                lastModified: file.lastModified
+              });
+              resolve(void 0);
+            };
+            reader.readAsDataURL(file);
+          });
+        }
+        
+        localStorage.setItem('musescroll-files', JSON.stringify(filesToStore));
+      } catch (error) {
+        console.error('Error saving files to storage:', error);
+      }
+    };
+
+    if (uploadedFiles.length > 0) {
+      saveFilesToStorage();
+    } else {
+      localStorage.removeItem('musescroll-files');
+    }
+  }, [uploadedFiles]);
 
   const handleFileSelect = (file: File | null) => {
     if (file) {
@@ -63,6 +137,10 @@ const Index = () => {
     }
   };
 
+  const removeFile = (index: number) => {
+    setUploadedFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
   if (showViewer && selectedFile) {
     return <PDFViewer file={selectedFile} onClose={handleCloseViewer} />;
   }
@@ -107,6 +185,16 @@ const Index = () => {
               <div className="grid gap-3">
                 {uploadedFiles.map((file, index) => (
                   <div key={index} className="flex items-center gap-3 p-4 bg-muted/50 rounded-lg hover:bg-muted/70 transition-colors">
+                    {/* Delete Button */}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => removeFile(index)}
+                      className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+
                     {/* Order Controls */}
                     <div className="flex flex-col gap-1">
                       <Button
