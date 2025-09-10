@@ -325,7 +325,6 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
     
     if (clickedMarker) {
       setCurrentView(clickedMarker.targetView);
-      toast(`Saltant a vista ${clickedMarker.targetView}`);
       return;
     }
     

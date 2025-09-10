@@ -16,6 +16,11 @@ const Index = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [showViewer, setShowViewer] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
+  
+  // Drag & Drop states
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dragStartTime, setDragStartTime] = useState<number | null>(null);
+  const [dragTimeout, setDragTimeout] = useState<NodeJS.Timeout | null>(null);
 
   // Load files from localStorage on component mount
   useEffect(() => {
@@ -141,6 +146,73 @@ const Index = () => {
     setUploadedFiles(prev => prev.filter((_, i) => i !== index));
   };
 
+  // Drag & Drop functions
+  const handleMouseDown = (index: number, e: React.MouseEvent) => {
+    e.preventDefault();
+    setDragStartTime(Date.now());
+    
+    const timeout = setTimeout(() => {
+      setDraggedIndex(index);
+      document.body.style.cursor = 'grabbing';
+    }, 2000);
+    
+    setDragTimeout(timeout);
+  };
+
+  const handleMouseUp = () => {
+    if (dragTimeout) {
+      clearTimeout(dragTimeout);
+      setDragTimeout(null);
+    }
+    setDragStartTime(null);
+    setDraggedIndex(null);
+    document.body.style.cursor = 'auto';
+  };
+
+  const handleTouchStart = (index: number, e: React.TouchEvent) => {
+    e.preventDefault();
+    setDragStartTime(Date.now());
+    
+    const timeout = setTimeout(() => {
+      setDraggedIndex(index);
+      navigator.vibrate?.(100); // Vibration feedback on mobile
+    }, 2000);
+    
+    setDragTimeout(timeout);
+  };
+
+  const handleTouchEnd = () => {
+    if (dragTimeout) {
+      clearTimeout(dragTimeout);
+      setDragTimeout(null);
+    }
+    setDragStartTime(null);
+    setDraggedIndex(null);
+  };
+
+  const handleDrop = (targetIndex: number) => {
+    if (draggedIndex === null || draggedIndex === targetIndex) return;
+    
+    setUploadedFiles(prev => {
+      const newFiles = [...prev];
+      const [draggedFile] = newFiles.splice(draggedIndex, 1);
+      newFiles.splice(targetIndex, 0, draggedFile);
+      return newFiles;
+    });
+    
+    setDraggedIndex(null);
+    document.body.style.cursor = 'auto';
+  };
+
+  // Clean up timeout on component unmount
+  useEffect(() => {
+    return () => {
+      if (dragTimeout) {
+        clearTimeout(dragTimeout);
+      }
+    };
+  }, [dragTimeout]);
+
   if (showViewer && selectedFile) {
     return <PDFViewer file={selectedFile} onClose={handleCloseViewer} />;
   }
@@ -184,7 +256,39 @@ const Index = () => {
               <h2 className="text-xl font-semibold mb-4">Les meves Partitures</h2>
               <div className="grid gap-3">
                 {uploadedFiles.map((file, index) => (
-                  <div key={index} className="flex items-center gap-3 p-4 bg-muted/50 rounded-lg hover:bg-muted/70 transition-colors">
+                  <div 
+                    key={index} 
+                    className={`flex items-center gap-3 p-4 rounded-lg transition-colors relative ${
+                      draggedIndex === index 
+                        ? 'bg-primary/20 border-2 border-primary scale-105 shadow-lg' 
+                        : 'bg-muted/50 hover:bg-muted/70'
+                    }`}
+                    onMouseDown={(e) => handleMouseDown(index, e)}
+                    onMouseUp={handleMouseUp}
+                    onTouchStart={(e) => handleTouchStart(index, e)}
+                    onTouchEnd={handleTouchEnd}
+                    onMouseEnter={() => {
+                      if (draggedIndex !== null && draggedIndex !== index) {
+                        handleDrop(index);
+                      }
+                    }}
+                    style={{ 
+                      userSelect: 'none',
+                      WebkitUserSelect: 'none',
+                      cursor: draggedIndex === index ? 'grabbing' : dragStartTime ? 'grab' : 'default'
+                    }}
+                  >
+                    {/* Drop indicator */}
+                    {draggedIndex !== null && draggedIndex !== index && (
+                      <div className="absolute inset-0 border-2 border-dashed border-primary/50 rounded-lg bg-primary/5" />
+                    )}
+                    
+                    {/* Long press indicator */}
+                    {dragStartTime && draggedIndex === null && (
+                      <div className="absolute top-2 right-2">
+                        <div className="w-2 h-2 bg-primary rounded-full animate-pulse" />
+                      </div>
+                    )}
                     {/* Delete Button */}
                     <Button
                       variant="ghost"
