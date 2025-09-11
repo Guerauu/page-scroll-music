@@ -155,9 +155,27 @@ const Index = () => {
     const timeout = setTimeout(() => {
       setDraggedIndex(index);
       document.body.style.cursor = 'grabbing';
+      // Disable scroll during drag
+      document.body.style.overflow = 'hidden';
     }, 2000);
     
     setDragTimeout(timeout);
+    
+    // Add global mouse move listener to prevent scrolling
+    const handleMouseMove = (e: MouseEvent) => {
+      if (dragStartTime) {
+        e.preventDefault();
+      }
+    };
+    
+    const handleGlobalMouseUp = () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleGlobalMouseUp);
+      document.body.style.overflow = 'auto';
+    };
+    
+    document.addEventListener('mousemove', handleMouseMove, { passive: false });
+    document.addEventListener('mouseup', handleGlobalMouseUp);
   };
 
   const handleMouseUp = () => {
