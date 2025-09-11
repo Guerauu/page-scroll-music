@@ -17,10 +17,6 @@ const Index = () => {
   const [showViewer, setShowViewer] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   
-  // Drag & Drop states
-  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
-  const [dragStartTime, setDragStartTime] = useState<number | null>(null);
-  const [dragTimeout, setDragTimeout] = useState<NodeJS.Timeout | null>(null);
 
   // Load files from localStorage on component mount
   useEffect(() => {
@@ -146,101 +142,8 @@ const Index = () => {
     setUploadedFiles(prev => prev.filter((_, i) => i !== index));
   };
 
-  // Drag & Drop functions
-  const handleMouseDown = (index: number, e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragStartTime(Date.now());
-    
-    const timeout = setTimeout(() => {
-      setDraggedIndex(index);
-      document.body.style.cursor = 'grabbing';
-      // Disable scroll during drag
-      document.body.style.overflow = 'hidden';
-    }, 2000);
-    
-    setDragTimeout(timeout);
-    
-    // Add global mouse move listener to prevent scrolling
-    const handleMouseMove = (e: MouseEvent) => {
-      if (dragStartTime) {
-        e.preventDefault();
-      }
-    };
-    
-    const handleGlobalMouseUp = () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleGlobalMouseUp);
-      document.body.style.overflow = 'auto';
-    };
-    
-    document.addEventListener('mousemove', handleMouseMove, { passive: false });
-    document.addEventListener('mouseup', handleGlobalMouseUp);
-  };
-
-  const handleMouseUp = () => {
-    if (dragTimeout) {
-      clearTimeout(dragTimeout);
-      setDragTimeout(null);
-    }
-    setDragStartTime(null);
-    setDraggedIndex(null);
-    document.body.style.cursor = 'auto';
-  };
-
-  const handleTouchStart = (index: number, e: React.TouchEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragStartTime(Date.now());
-    
-    const timeout = setTimeout(() => {
-      setDraggedIndex(index);
-      navigator.vibrate?.(100); // Vibration feedback on mobile
-    }, 2000);
-    
-    setDragTimeout(timeout);
-  };
-
-  const handleTouchEnd = (e: React.TouchEvent) => {
-    e.preventDefault();
-    if (dragTimeout) {
-      clearTimeout(dragTimeout);
-      setDragTimeout(null);
-    }
-    setDragStartTime(null);
-    setDraggedIndex(null);
-  };
-
-  // Prevent context menu during drag operations
-  const handleContextMenu = (e: React.MouseEvent) => {
-    if (dragStartTime || draggedIndex !== null) {
-      e.preventDefault();
-      e.stopPropagation();
-    }
-  };
-
-  const handleDrop = (targetIndex: number) => {
-    if (draggedIndex === null || draggedIndex === targetIndex) return;
-    
-    setUploadedFiles(prev => {
-      const newFiles = [...prev];
-      const [draggedFile] = newFiles.splice(draggedIndex, 1);
-      newFiles.splice(targetIndex, 0, draggedFile);
-      return newFiles;
-    });
-    
-    setDraggedIndex(null);
-    document.body.style.cursor = 'auto';
-  };
-
-  // Clean up timeout on component unmount
-  useEffect(() => {
-    return () => {
-      if (dragTimeout) {
-        clearTimeout(dragTimeout);
-      }
-    };
-  }, [dragTimeout]);
+  // Drag & Drop functions - REMOVED
+  // Now using only arrow buttons for reordering
 
   if (showViewer && selectedFile) {
     return <PDFViewer file={selectedFile} onClose={handleCloseViewer} />;
@@ -283,53 +186,24 @@ const Index = () => {
           {uploadedFiles.length > 0 && (
             <div className="bg-card rounded-xl shadow-music-soft p-6">
               <h2 className="text-xl font-semibold mb-4">Les meves Partitures</h2>
-              <div className="grid gap-3">
+                <div className="grid gap-3">
                 {uploadedFiles.map((file, index) => (
                   <div 
                     key={index} 
-                    className={`flex items-center gap-3 p-4 rounded-lg transition-colors relative ${
-                      draggedIndex === index 
-                        ? 'bg-primary/20 border-2 border-primary scale-105 shadow-lg' 
-                        : 'bg-muted/50 hover:bg-muted/70'
-                    }`}
-                    onMouseDown={(e) => handleMouseDown(index, e)}
-                    onMouseUp={handleMouseUp}
-                    onTouchStart={(e) => handleTouchStart(index, e)}
-                    onTouchEnd={handleTouchEnd}
-                    onContextMenu={handleContextMenu}
-                    onMouseEnter={() => {
-                      if (draggedIndex !== null && draggedIndex !== index) {
-                        handleDrop(index);
-                      }
-                    }}
-                    style={{ 
-                      userSelect: 'none',
-                      WebkitUserSelect: 'none',
-                      WebkitTouchCallout: 'none',
-                      WebkitTapHighlightColor: 'transparent',
-                      cursor: draggedIndex === index ? 'grabbing' : dragStartTime ? 'grab' : 'default'
-                    }}
+                    className="flex items-center gap-3 p-4 rounded-lg bg-muted/50 hover:bg-muted/70 transition-colors"
                   >
-                    {/* Drop indicator */}
-                    {draggedIndex !== null && draggedIndex !== index && (
-                      <div className="absolute inset-0 border-2 border-dashed border-primary/50 rounded-lg bg-primary/5" />
-                    )}
-                    
-                    {/* Long press indicator */}
-                    {dragStartTime && draggedIndex === null && (
-                      <div className="absolute top-2 right-2">
-                        <div className="w-2 h-2 bg-primary rounded-full animate-pulse" />
+                    {/* File Info */}
+                    <div className="flex items-center gap-3 flex-1">
+                      <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
+                        <Music className="h-5 w-5 text-primary" />
                       </div>
-                    )}
-                    {/* Delete Button */}
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => removeFile(index)}
-                      className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
+                      <div className="flex-1">
+                        <p className="font-medium">{file.name}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {(file.size / 1024 / 1024).toFixed(1)} MB
+                        </p>
+                      </div>
+                    </div>
 
                     {/* Order Controls */}
                     <div className="flex flex-col gap-1">
@@ -353,19 +227,6 @@ const Index = () => {
                       </Button>
                     </div>
 
-                    {/* File Info */}
-                    <div className="flex items-center gap-3 flex-1">
-                      <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
-                        <Music className="h-5 w-5 text-primary" />
-                      </div>
-                      <div className="flex-1">
-                        <p className="font-medium">{file.name}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {(file.size / 1024 / 1024).toFixed(1)} MB
-                        </p>
-                      </div>
-                    </div>
-
                     {/* Play Button */}
                     <Button 
                       variant="music" 
@@ -373,6 +234,16 @@ const Index = () => {
                       onClick={() => handleFilePlay(file)}
                     >
                       Tocar
+                    </Button>
+
+                    {/* Delete Button - Separated from order controls */}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => removeFile(index)}
+                      className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10 ml-2"
+                    >
+                      <X className="h-4 w-4" />
                     </Button>
                   </div>
                 ))}
