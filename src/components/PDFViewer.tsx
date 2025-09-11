@@ -506,14 +506,34 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
           <span>{getViewDescription()}</span>
           <span>Vista {currentView} de {getTotalViews()}</span>
         </div>
-        <Slider 
-          value={[currentView]} 
-          onValueChange={(value) => setCurrentView(value[0])}
-          max={getTotalViews()} 
-          min={1} 
-          step={1} 
-          className="h-2"
-        />
+        <div className="flex items-center gap-2">
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={goToPreviousView}
+            disabled={currentView <= 1}
+            className="h-8 w-8 p-0"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <Slider 
+            value={[currentView]} 
+            onValueChange={(value) => setCurrentView(value[0])}
+            max={getTotalViews()} 
+            min={1} 
+            step={1} 
+            className="h-2 flex-1"
+          />
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={goToNextView}
+            disabled={currentView >= getTotalViews()}
+            className="h-8 w-8 p-0"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
 
         {/* PDF Canvas Container */}
