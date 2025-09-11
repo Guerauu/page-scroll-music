@@ -149,6 +149,7 @@ const Index = () => {
   // Drag & Drop functions
   const handleMouseDown = (index: number, e: React.MouseEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     setDragStartTime(Date.now());
     
     const timeout = setTimeout(() => {
@@ -171,6 +172,7 @@ const Index = () => {
 
   const handleTouchStart = (index: number, e: React.TouchEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     setDragStartTime(Date.now());
     
     const timeout = setTimeout(() => {
@@ -181,13 +183,22 @@ const Index = () => {
     setDragTimeout(timeout);
   };
 
-  const handleTouchEnd = () => {
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    e.preventDefault();
     if (dragTimeout) {
       clearTimeout(dragTimeout);
       setDragTimeout(null);
     }
     setDragStartTime(null);
     setDraggedIndex(null);
+  };
+
+  // Prevent context menu during drag operations
+  const handleContextMenu = (e: React.MouseEvent) => {
+    if (dragStartTime || draggedIndex !== null) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
   };
 
   const handleDrop = (targetIndex: number) => {
@@ -267,6 +278,7 @@ const Index = () => {
                     onMouseUp={handleMouseUp}
                     onTouchStart={(e) => handleTouchStart(index, e)}
                     onTouchEnd={handleTouchEnd}
+                    onContextMenu={handleContextMenu}
                     onMouseEnter={() => {
                       if (draggedIndex !== null && draggedIndex !== index) {
                         handleDrop(index);
@@ -275,6 +287,8 @@ const Index = () => {
                     style={{ 
                       userSelect: 'none',
                       WebkitUserSelect: 'none',
+                      WebkitTouchCallout: 'none',
+                      WebkitTapHighlightColor: 'transparent',
                       cursor: draggedIndex === index ? 'grabbing' : dragStartTime ? 'grab' : 'default'
                     }}
                   >
