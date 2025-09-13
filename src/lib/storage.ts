@@ -6,6 +6,14 @@ interface StoredFile {
   data: Blob;
   lastModified: number;
   addedAt: number;
+  folderId?: string; // Nueva propiedad para asociar archivos con carpetas
+}
+
+interface StoredFolder {
+  id: string;
+  name: string;
+  createdAt: number;
+  order: number;
 }
 
 interface StoredMarkers {
@@ -53,6 +61,7 @@ class MuseScrollStorage {
           const filesStore = db.createObjectStore('files', { keyPath: 'id' });
           filesStore.createIndex('name', 'name', { unique: false });
           filesStore.createIndex('addedAt', 'addedAt', { unique: false });
+          filesStore.createIndex('folderId', 'folderId', { unique: false });
         }
 
         // Create markers store
@@ -60,12 +69,124 @@ class MuseScrollStorage {
           const markersStore = db.createObjectStore('markers', { keyPath: 'id' });
           markersStore.createIndex('fileName', 'fileName', { unique: true });
         }
+
+        // Create folders store
+        if (!db.objectStoreNames.contains('folders')) {
+          const foldersStore = db.createObjectStore('folders', { keyPath: 'id' });
+          foldersStore.createIndex('order', 'order', { unique: false });
+        }
       };
     });
   }
 
+  // Folders operations
+  async createFolder(name: string): Promise<string> {
+    await this.ensureInitialized();
+    
+    const folders = await this.getFolders();
+    const maxOrder = folders.length > 0 ? Math.max(...folders.map(f => f.order)) : -1;
+    
+    const id = `folder-${Date.now()}`;
+    const folder: StoredFolder = {
+      id,
+      name,
+      createdAt: Date.now(),
+      order: maxOrder + 1
+    };
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(['folders'], 'readwrite');
+      const store = transaction.objectStore('folders');
+      const request = store.put(folder);
+
+      request.onsuccess = () => resolve(id);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  async getFolders(): Promise<StoredFolder[]> {
+    await this.ensureInitialized();
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(['folders'], 'readonly');
+      const store = transaction.objectStore('folders');
+      const index = store.index('order');
+      const request = index.getAll();
+
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  async updateFolder(id: string, updates: Partial<StoredFolder>): Promise<void> {
+    await this.ensureInitialized();
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(['folders'], 'readwrite');
+      const store = transaction.objectStore('folders');
+      
+      const getRequest = store.get(id);
+      getRequest.onsuccess = () => {
+        const folder = getRequest.result;
+        if (folder) {
+          const updatedFolder = { ...folder, ...updates };
+          const putRequest = store.put(updatedFolder);
+          putRequest.onsuccess = () => resolve();
+          putRequest.onerror = () => reject(putRequest.error);
+        } else {
+          reject(new Error('Folder not found'));
+        }
+      };
+      getRequest.onerror = () => reject(getRequest.error);
+    });
+  }
+
+  async deleteFolder(id: string): Promise<void> {
+    await this.ensureInitialized();
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(['folders', 'files'], 'readwrite');
+      
+      // Delete folder
+      const folderStore = transaction.objectStore('folders');
+      const deleteFolderRequest = folderStore.delete(id);
+      
+      // Move files in this folder to root (no folder)
+      const filesStore = transaction.objectStore('files');
+      const filesIndex = filesStore.index('folderId');
+      const getFilesRequest = filesIndex.getAll(id);
+      
+      getFilesRequest.onsuccess = () => {
+        const files = getFilesRequest.result;
+        let completed = 0;
+        const total = files.length;
+        
+        if (total === 0) {
+          deleteFolderRequest.onsuccess = () => resolve();
+          deleteFolderRequest.onerror = () => reject(deleteFolderRequest.error);
+          return;
+        }
+        
+        files.forEach(file => {
+          delete file.folderId;
+          const updateRequest = filesStore.put(file);
+          updateRequest.onsuccess = () => {
+            completed++;
+            if (completed === total) {
+              deleteFolderRequest.onsuccess = () => resolve();
+              deleteFolderRequest.onerror = () => reject(deleteFolderRequest.error);
+            }
+          };
+          updateRequest.onerror = () => reject(updateRequest.error);
+        });
+      };
+      
+      getFilesRequest.onerror = () => reject(getFilesRequest.error);
+    });
+  }
+
   // Files operations
-  async saveFile(file: File): Promise<string> {
+  async saveFile(file: File, folderId?: string): Promise<string> {
     await this.ensureInitialized();
     
     const id = `${file.name}-${file.size}-${file.lastModified}`;
@@ -76,7 +197,8 @@ class MuseScrollStorage {
       type: file.type,
       data: file,
       lastModified: file.lastModified,
-      addedAt: Date.now()
+      addedAt: Date.now(),
+      folderId
     };
 
     return new Promise((resolve, reject) => {
@@ -86,6 +208,31 @@ class MuseScrollStorage {
 
       request.onsuccess = () => resolve(id);
       request.onerror = () => reject(request.error);
+    });
+  }
+
+  async moveFileToFolder(file: File, folderId?: string): Promise<void> {
+    await this.ensureInitialized();
+    
+    const id = `${file.name}-${file.size}-${file.lastModified}`;
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(['files'], 'readwrite');
+      const store = transaction.objectStore('files');
+      
+      const getRequest = store.get(id);
+      getRequest.onsuccess = () => {
+        const storedFile = getRequest.result;
+        if (storedFile) {
+          storedFile.folderId = folderId;
+          const putRequest = store.put(storedFile);
+          putRequest.onsuccess = () => resolve();
+          putRequest.onerror = () => reject(putRequest.error);
+        } else {
+          reject(new Error('File not found'));
+        }
+      };
+      getRequest.onerror = () => reject(getRequest.error);
     });
   }
 
@@ -100,12 +247,15 @@ class MuseScrollStorage {
 
       request.onsuccess = () => {
         const storedFiles: StoredFile[] = request.result;
-        const files = storedFiles.map(stored => 
-          new File([stored.data], stored.name, {
+        const files = storedFiles.map(stored => {
+          const file = new File([stored.data], stored.name, {
             type: stored.type,
             lastModified: stored.lastModified
-          })
-        );
+          });
+          // Store folder info in a way we can access it
+          (file as any).folderId = stored.folderId;
+          return file;
+        });
         resolve(files);
       };
 
