@@ -3,86 +3,75 @@ import { FileUploader } from "@/components/FileUploader";
 import { PDFViewer } from "@/components/PDFViewer";
 import { Button } from "@/components/ui/button";
 import { Music, Github, Heart, ChevronUp, ChevronDown, X } from "lucide-react";
-
-interface StoredFile {
-  name: string;
-  size: number;
-  type: string;
-  data: string; // base64
-  lastModified: number;
-}
+import { storage, initStorage } from "@/lib/storage";
+import { toast } from "sonner";
 
 const Index = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [showViewer, setShowViewer] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
-  
+  const [isStorageReady, setIsStorageReady] = useState(false);
 
-  // Load files from localStorage on component mount
+  // Initialize storage and load files
   useEffect(() => {
-    const loadStoredFiles = async () => {
+    const initializeStorage = async () => {
       try {
-        const storedFiles = localStorage.getItem('musescroll-files');
-        if (storedFiles) {
-          const parsedFiles: StoredFile[] = JSON.parse(storedFiles);
-          const files: File[] = [];
-          
-          for (const storedFile of parsedFiles) {
-            // Convert base64 back to File
-            const response = await fetch(storedFile.data);
-            const blob = await response.blob();
-            const file = new File([blob], storedFile.name, {
-              type: storedFile.type,
-              lastModified: storedFile.lastModified
-            });
-            files.push(file);
-          }
-          
-          setUploadedFiles(files);
-        }
+        await initStorage();
+        const files = await storage.getFiles();
+        setUploadedFiles(files);
+        setIsStorageReady(true);
       } catch (error) {
-        console.error('Error loading stored files:', error);
+        console.error('Error initializing storage:', error);
+        toast.error('Error inicialitzant l\'emmagatzemament');
+        setIsStorageReady(true); // Continue even if storage fails
       }
     };
 
-    loadStoredFiles();
+    initializeStorage();
   }, []);
 
-  // Save files to localStorage whenever uploadedFiles changes
+  // Save files whenever uploadedFiles changes (only after storage is ready)
   useEffect(() => {
-    const saveFilesToStorage = async () => {
+    if (!isStorageReady) return;
+
+    const saveFiles = async () => {
       try {
-        const filesToStore: StoredFile[] = [];
+        // Get current files in storage
+        const currentFiles = await storage.getFiles();
         
-        for (const file of uploadedFiles) {
-          const reader = new FileReader();
-          await new Promise((resolve) => {
-            reader.onload = () => {
-              filesToStore.push({
-                name: file.name,
-                size: file.size,
-                type: file.type,
-                data: reader.result as string,
-                lastModified: file.lastModified
-              });
-              resolve(void 0);
-            };
-            reader.readAsDataURL(file);
-          });
+        // Find files to remove (in storage but not in uploadedFiles)
+        for (const currentFile of currentFiles) {
+          const stillExists = uploadedFiles.some(f => 
+            f.name === currentFile.name && 
+            f.size === currentFile.size && 
+            f.lastModified === currentFile.lastModified
+          );
+          
+          if (!stillExists) {
+            await storage.deleteFile(currentFile);
+          }
         }
         
-        localStorage.setItem('musescroll-files', JSON.stringify(filesToStore));
+        // Save new files
+        for (const file of uploadedFiles) {
+          const alreadyExists = currentFiles.some(f => 
+            f.name === file.name && 
+            f.size === file.size && 
+            f.lastModified === file.lastModified
+          );
+          
+          if (!alreadyExists) {
+            await storage.saveFile(file);
+          }
+        }
       } catch (error) {
-        console.error('Error saving files to storage:', error);
+        console.error('Error saving files:', error);
+        toast.error('Error guardant els fitxers');
       }
     };
 
-    if (uploadedFiles.length > 0) {
-      saveFilesToStorage();
-    } else {
-      localStorage.removeItem('musescroll-files');
-    }
-  }, [uploadedFiles]);
+    saveFiles();
+  }, [uploadedFiles, isStorageReady]);
 
   const handleFileSelect = (file: File | null) => {
     if (file) {

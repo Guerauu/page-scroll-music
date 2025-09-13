@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, RotateCcw, Menu, X, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { storage, initStorage } from "@/lib/storage";
 
 // Set worker path
 pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
@@ -43,23 +44,38 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
   // Calculate total views: for N pages, we have 2*N - 1 views
   const getTotalViews = () => totalPages > 0 ? 2 * totalPages - 1 : 0;
 
-  // Load markers from localStorage
+  // Load markers from IndexedDB
   useEffect(() => {
     if (!file) return;
-    const savedMarkers = localStorage.getItem(`markers_${file.name}`);
-    if (savedMarkers) {
+
+    const loadMarkers = async () => {
       try {
-        setMarkers(JSON.parse(savedMarkers));
+        await initStorage();
+        const savedMarkers = await storage.getMarkers(file.name);
+        setMarkers(savedMarkers);
       } catch (error) {
         console.error("Error loading markers:", error);
+        toast.error("Error carregant els marcadors");
       }
-    }
+    };
+
+    loadMarkers();
   }, [file]);
 
-  // Save markers to localStorage
+  // Save markers to IndexedDB
   useEffect(() => {
-    if (!file || markers.length === 0) return;
-    localStorage.setItem(`markers_${file.name}`, JSON.stringify(markers));
+    if (!file) return;
+
+    const saveMarkers = async () => {
+      try {
+        await storage.saveMarkers(file.name, markers);
+      } catch (error) {
+        console.error("Error saving markers:", error);
+        toast.error("Error guardant els marcadors");
+      }
+    };
+
+    saveMarkers();
   }, [markers, file]);
 
   useEffect(() => {
