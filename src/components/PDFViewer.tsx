@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
-import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, RotateCcw, Menu, X, Plus, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, RotateCcw, Menu, X, Plus, Trash2, Play, Pause } from "lucide-react";
 import { toast } from "sonner";
 import { storage, initStorage } from "@/lib/storage";
 
@@ -37,6 +37,11 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
   const [scale, setScale] = useState(1.5);
   const [loading, setLoading] = useState(false);
   const [viewMode, setViewMode] = useState<'split' | 'scroll'>('split');
+  
+  // Auto-scroll states
+  const [isAutoScrolling, setIsAutoScrolling] = useState(false);
+  const [autoScrollSpeed, setAutoScrollSpeed] = useState(1); // pixels per frame (1-10)
+  const [scrollOriginY, setScrollOriginY] = useState<number | null>(null);
   
   // Marker states
   const [markers, setMarkers] = useState<Marker[]>([]);
@@ -112,6 +117,33 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
       renderScrollView();
     }
   }, [pdf, currentView, scale, markers, viewMode]);
+
+  // Auto-scroll effect
+  useEffect(() => {
+    if (!isAutoScrolling || viewMode !== 'scroll' || !containerRef.current) return;
+
+    const container = containerRef.current;
+    let animationFrameId: number;
+
+    const scroll = () => {
+      if (container) {
+        container.scrollTop += autoScrollSpeed;
+        
+        // Stop if we reach the bottom
+        if (container.scrollTop + container.clientHeight >= container.scrollHeight) {
+          setIsAutoScrolling(false);
+          return;
+        }
+      }
+      animationFrameId = requestAnimationFrame(scroll);
+    };
+
+    animationFrameId = requestAnimationFrame(scroll);
+
+    return () => {
+      cancelAnimationFrame(animationFrameId);
+    };
+  }, [isAutoScrolling, autoScrollSpeed, viewMode]);
 
   const renderCurrentView = async () => {
     if (!pdf || !canvasRef.current) return;
@@ -311,6 +343,10 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
     
     // Check if we're in insert mode
     if (insertMode === 'origin') {
+      // Save scroll position in scroll mode
+      if (viewMode === 'scroll' && containerRef.current) {
+        setScrollOriginY(containerRef.current.scrollTop);
+      }
       setPendingOrigin({ view: currentView, x: relativeX, y: relativeY });
       setInsertMode('target');
       toast("Marcador d'origen col·locat. Ara clica on vols anar.");
@@ -347,7 +383,13 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
     });
     
     if (clickedMarker) {
-      setCurrentView(clickedMarker.targetView);
+      // In scroll mode, return to origin scroll position
+      if (viewMode === 'scroll' && containerRef.current && scrollOriginY !== null) {
+        containerRef.current.scrollTop = scrollOriginY;
+        setScrollOriginY(null);
+      } else {
+        setCurrentView(clickedMarker.targetView);
+      }
       return;
     }
     
@@ -551,12 +593,12 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
       {/* Main Content */}
       <div className="flex flex-col flex-1">
         {/* Header Controls */}
-        <div className="flex items-center justify-between p-4 bg-card border-b shadow-music-soft">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="sm" onClick={onClose}>
+        <div className="flex flex-wrap items-center justify-between gap-3 p-4 bg-card border-b shadow-music-soft">
+        <div className="flex items-center gap-3 min-w-0">
+          <Button variant="ghost" size="sm" onClick={onClose} className="shrink-0">
             ← Tornar
           </Button>
-          <div className="text-sm font-medium text-muted-foreground">
+          <div className="text-sm font-medium text-muted-foreground truncate">
             {file.name}
           </div>
         </div>
@@ -565,23 +607,23 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
         <RadioGroup 
           value={viewMode} 
           onValueChange={(value) => setViewMode(value as 'split' | 'scroll')}
-          className="flex items-center gap-4"
+          className="flex items-center gap-2 shrink-0"
         >
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-1">
             <RadioGroupItem value="split" id="split" />
-            <Label htmlFor="split" className="cursor-pointer text-sm">Mode Split</Label>
+            <Label htmlFor="split" className="cursor-pointer text-xs sm:text-sm whitespace-nowrap">Split</Label>
           </div>
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-1">
             <RadioGroupItem value="scroll" id="scroll" />
-            <Label htmlFor="scroll" className="cursor-pointer text-sm">Mode Scroll</Label>
+            <Label htmlFor="scroll" className="cursor-pointer text-xs sm:text-sm whitespace-nowrap">Scroll</Label>
           </div>
         </RadioGroup>
         
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
           <Button variant="outline" size="sm" onClick={zoomOut}>
             <ZoomOut className="h-4 w-4" />
           </Button>
-          <div className="text-sm font-mono min-w-12 text-center">
+          <div className="text-xs sm:text-sm font-mono min-w-10 sm:min-w-12 text-center">
             {Math.round(scale * 100)}%
           </div>
           <Button variant="outline" size="sm" onClick={zoomIn}>
@@ -656,6 +698,33 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
           </div>
           )}
         </div>
+
+        {/* Auto-scroll controls - only in scroll mode */}
+        {viewMode === 'scroll' && (
+          <div className="fixed bottom-8 right-8 flex flex-col items-center gap-3 bg-card p-3 rounded-lg shadow-lg border z-30">
+            <Button
+              variant={isAutoScrolling ? "default" : "outline"}
+              size="sm"
+              onClick={() => setIsAutoScrolling(!isAutoScrolling)}
+              className="w-12 h-12"
+            >
+              {isAutoScrolling ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
+            </Button>
+            
+            <div className="flex flex-col items-center gap-2">
+              <Slider
+                value={[autoScrollSpeed]}
+                onValueChange={(value) => setAutoScrollSpeed(value[0])}
+                min={1}
+                max={10}
+                step={0.5}
+                orientation="vertical"
+                className="h-32"
+              />
+              <span className="text-xs text-muted-foreground">{autoScrollSpeed.toFixed(1)}x</span>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
