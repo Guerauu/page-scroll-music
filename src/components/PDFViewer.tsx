@@ -3,6 +3,8 @@ import * as pdfjsLib from "pdfjs-dist";
 import "pdfjs-dist/build/pdf.worker.min.mjs";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Label } from "@/components/ui/label";
 import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, RotateCcw, Menu, X, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { storage, initStorage } from "@/lib/storage";
@@ -34,6 +36,7 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
   const [totalPages, setTotalPages] = useState(0);
   const [scale, setScale] = useState(1.5);
   const [loading, setLoading] = useState(false);
+  const [viewMode, setViewMode] = useState<'split' | 'scroll'>('split');
   
   // Marker states
   const [markers, setMarkers] = useState<Marker[]>([]);
@@ -103,8 +106,12 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
 
   useEffect(() => {
     if (!pdf || !canvasRef.current) return;
-    renderCurrentView();
-  }, [pdf, currentView, scale, markers]);
+    if (viewMode === 'split') {
+      renderCurrentView();
+    } else {
+      renderScrollView();
+    }
+  }, [pdf, currentView, scale, markers, viewMode]);
 
   const renderCurrentView = async () => {
     if (!pdf || !canvasRef.current) return;
@@ -418,6 +425,60 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
     toast("Marcador eliminat");
   };
 
+  const renderScrollView = async () => {
+    if (!pdf || !canvasRef.current) return;
+
+    try {
+      const canvas = canvasRef.current;
+      const context = canvas.getContext("2d");
+      
+      if (!context) return;
+
+      // Get first page to determine dimensions
+      const firstPage = await pdf.getPage(1);
+      const viewport = firstPage.getViewport({ scale });
+      
+      // Set canvas size: width of one page, height of all pages stacked
+      canvas.width = viewport.width;
+      canvas.height = viewport.height * totalPages;
+      
+      // Clear and set white background
+      context.fillStyle = "#ffffff";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Render all pages vertically
+      for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+        const page = await pdf.getPage(pageNum);
+        const pageViewport = page.getViewport({ scale });
+        
+        // Create temporary canvas for this page
+        const tempCanvas = document.createElement('canvas');
+        const tempContext = tempCanvas.getContext('2d');
+        if (!tempContext) continue;
+
+        tempCanvas.width = pageViewport.width;
+        tempCanvas.height = pageViewport.height;
+        
+        tempContext.fillStyle = "#ffffff";
+        tempContext.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+        
+        await page.render({
+          canvasContext: tempContext,
+          viewport: pageViewport,
+          canvas: tempCanvas
+        }).promise;
+        
+        // Draw this page at the appropriate Y position
+        const yOffset = (pageNum - 1) * viewport.height;
+        context.drawImage(tempCanvas, 0, yOffset);
+      }
+
+    } catch (error) {
+      console.error("Error rendering scroll view:", error);
+      toast("Error mostrant la vista scroll");
+    }
+  };
+
   if (!file) return null;
 
   return (
@@ -499,6 +560,22 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
             {file.name}
           </div>
         </div>
+
+        {/* View Mode Selector */}
+        <RadioGroup 
+          value={viewMode} 
+          onValueChange={(value) => setViewMode(value as 'split' | 'scroll')}
+          className="flex items-center gap-4"
+        >
+          <div className="flex items-center space-x-2">
+            <RadioGroupItem value="split" id="split" />
+            <Label htmlFor="split" className="cursor-pointer text-sm">Mode Split</Label>
+          </div>
+          <div className="flex items-center space-x-2">
+            <RadioGroupItem value="scroll" id="scroll" />
+            <Label htmlFor="scroll" className="cursor-pointer text-sm">Mode Scroll</Label>
+          </div>
+        </RadioGroup>
         
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={zoomOut}>
@@ -516,41 +593,43 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
         </div>
       </div>
 
-      {/* Progress Slider */}
-      <div className="px-4 py-2 bg-muted/50">
-        <div className="flex items-center justify-between text-xs text-muted-foreground mb-2">
-          <span>{getViewDescription()}</span>
-          <span>Vista {currentView} de {getTotalViews()}</span>
+      {/* Progress Slider - Only show in split mode */}
+      {viewMode === 'split' && (
+        <div className="px-4 py-2 bg-muted/50">
+          <div className="flex items-center justify-between text-xs text-muted-foreground mb-2">
+            <span>{getViewDescription()}</span>
+            <span>Vista {currentView} de {getTotalViews()}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={goToPreviousView}
+              disabled={currentView <= 1}
+              className="h-8 w-8 p-0"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Slider 
+              value={[currentView]} 
+              onValueChange={(value) => setCurrentView(value[0])}
+              max={getTotalViews()} 
+              min={1} 
+              step={1} 
+              className="h-2 flex-1"
+            />
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={goToNextView}
+              disabled={currentView >= getTotalViews()}
+              className="h-8 w-8 p-0"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            onClick={goToPreviousView}
-            disabled={currentView <= 1}
-            className="h-8 w-8 p-0"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <Slider 
-            value={[currentView]} 
-            onValueChange={(value) => setCurrentView(value[0])}
-            max={getTotalViews()} 
-            min={1} 
-            step={1} 
-            className="h-2 flex-1"
-          />
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            onClick={goToNextView}
-            disabled={currentView >= getTotalViews()}
-            className="h-8 w-8 p-0"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
+      )}
 
         {/* PDF Canvas Container */}
         <div ref={containerRef} className="flex-1 flex items-center justify-center p-4 overflow-auto">
@@ -563,14 +642,17 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
           <div className="relative">
             <canvas
               ref={canvasRef}
-              onClick={handleCanvasClick}
-              className="max-w-full max-h-full shadow-music-medium rounded-lg cursor-pointer transition-transform hover:scale-[1.02]"
+              onClick={viewMode === 'split' ? handleCanvasClick : undefined}
+              className="max-w-full max-h-full shadow-music-medium rounded-lg transition-transform hover:scale-[1.02]"
               style={{ 
-                border: "1px solid hsl(var(--border))"
+                border: "1px solid hsl(var(--border))",
+                cursor: viewMode === 'split' ? 'pointer' : 'default'
               }}
             />
-            {/* Divider line to show halves */}
-            <div className="absolute top-1/2 left-0 right-0 h-px bg-primary/20 pointer-events-none" />
+            {/* Divider line to show halves - only in split mode */}
+            {viewMode === 'split' && (
+              <div className="absolute top-1/2 left-0 right-0 h-px bg-primary/20 pointer-events-none" />
+            )}
           </div>
           )}
         </div>
