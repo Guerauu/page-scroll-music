@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
-import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, RotateCcw, Menu, X, Plus, Trash2, Play, Pause } from "lucide-react";
+import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, RotateCcw, Menu, X, Plus, Trash2, Play, Pause, Edit3, Type } from "lucide-react";
 import { toast } from "sonner";
 import { storage, initStorage } from "@/lib/storage";
 
@@ -21,6 +21,14 @@ interface Marker {
   targetX: number; // posició x relativa (0-1) destí
   targetY: number; // posició y relativa (0-1) destí
   colorIndex: number;
+}
+
+interface Annotation {
+  id: string;
+  type: 'oval' | 'wholeNote' | 'repeatStart' | 'repeatEnd' | 'text';
+  x: number; // relative position (0-1)
+  y: number; // relative position (0-1)
+  text?: string; // for text annotations
 }
 
 interface PDFViewerProps {
@@ -49,6 +57,13 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
   const [isMarkersMenuOpen, setIsMarkersMenuOpen] = useState(false);
   const [insertMode, setInsertMode] = useState<'none' | 'origin' | 'target'>('none');
   const [pendingOrigin, setPendingOrigin] = useState<{view: number, x: number, y: number} | null>(null);
+  
+  // Annotation states
+  const [annotations, setAnnotations] = useState<Annotation[]>([]);
+  const [isAnnotationsMenuOpen, setIsAnnotationsMenuOpen] = useState(false);
+  const [selectedAnnotationType, setSelectedAnnotationType] = useState<Annotation['type'] | null>(null);
+  const [editingAnnotation, setEditingAnnotation] = useState<string | null>(null);
+  const [annotationText, setAnnotationText] = useState('');
 
   // Calculate total views: for N pages, we have 2*N - 1 views
   const getTotalViews = () => totalPages > 0 ? 2 * totalPages - 1 : 0;
@@ -86,6 +101,40 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
 
     saveMarkers();
   }, [markers, file]);
+
+  // Load annotations from IndexedDB
+  useEffect(() => {
+    if (!file) return;
+
+    const loadAnnotations = async () => {
+      try {
+        await initStorage();
+        const savedAnnotations = await storage.getAnnotations(file.name);
+        setAnnotations(savedAnnotations);
+      } catch (error) {
+        console.error("Error loading annotations:", error);
+        toast.error("Error carregant les anotacions");
+      }
+    };
+
+    loadAnnotations();
+  }, [file]);
+
+  // Save annotations to IndexedDB
+  useEffect(() => {
+    if (!file) return;
+
+    const saveAnnotations = async () => {
+      try {
+        await storage.saveAnnotations(file.name, annotations);
+      } catch (error) {
+        console.error("Error saving annotations:", error);
+        toast.error("Error guardant les anotacions");
+      }
+    };
+
+    saveAnnotations();
+  }, [annotations, file]);
 
   useEffect(() => {
     if (!file) return;
@@ -232,6 +281,9 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
 
       // Draw markers for current view
       renderMarkers(context, canvas.width, canvas.height);
+      
+      // Draw annotations for current view
+      renderAnnotations(context, canvas.width, canvas.height);
 
     } catch (error) {
       console.error("Error rendering view:", error);
@@ -295,6 +347,101 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
       context.moveTo(x, y - lineHeight / 2);
       context.lineTo(x, y + lineHeight / 2);
       context.stroke();
+    });
+  };
+
+  const renderAnnotations = (context: CanvasRenderingContext2D, canvasWidth: number, canvasHeight: number) => {
+    // Marker height for reference (1cm ≈ 37.8 pixels)
+    const markerHeight = Math.min(37.8, canvasHeight * 0.1);
+    const annotationSize = markerHeight / 6; // 1/6 of marker height
+    
+    annotations.forEach((annotation) => {
+      const x = annotation.x * canvasWidth;
+      const y = annotation.y * canvasHeight;
+      
+      // Set common styles
+      context.fillStyle = '#ffffff';
+      context.strokeStyle = '#000000';
+      context.lineWidth = 2;
+      
+      switch (annotation.type) {
+        case 'oval':
+          // Small oval (wider than tall)
+          const ovalWidth = annotationSize * 1.5;
+          const ovalHeight = annotationSize;
+          
+          context.beginPath();
+          context.ellipse(x, y, ovalWidth / 2, ovalHeight / 2, 0, 0, Math.PI * 2);
+          context.fill();
+          context.stroke();
+          break;
+          
+        case 'wholeNote':
+          // Whole note (white circle with black outline)
+          const noteRadius = annotationSize / 2;
+          
+          context.beginPath();
+          context.ellipse(x, y, noteRadius * 1.3, noteRadius, 0, 0, Math.PI * 2);
+          context.fill();
+          context.stroke();
+          break;
+          
+        case 'repeatStart':
+          // Repeat start sign: ||:
+          const barWidth = 2;
+          const barHeight = annotationSize * 1.5;
+          const dotRadius = 2;
+          
+          // First thick bar
+          context.fillStyle = '#000000';
+          context.fillRect(x - 8, y - barHeight / 2, barWidth * 2, barHeight);
+          
+          // Second thin bar
+          context.fillRect(x - 3, y - barHeight / 2, barWidth, barHeight);
+          
+          // Two dots
+          context.beginPath();
+          context.arc(x + 3, y - 4, dotRadius, 0, Math.PI * 2);
+          context.arc(x + 3, y + 4, dotRadius, 0, Math.PI * 2);
+          context.fill();
+          break;
+          
+        case 'repeatEnd':
+          // Repeat end sign: :||
+          const barWidth2 = 2;
+          const barHeight2 = annotationSize * 1.5;
+          const dotRadius2 = 2;
+          
+          // Two dots
+          context.fillStyle = '#000000';
+          context.beginPath();
+          context.arc(x - 3, y - 4, dotRadius2, 0, Math.PI * 2);
+          context.arc(x - 3, y + 4, dotRadius2, 0, Math.PI * 2);
+          context.fill();
+          
+          // First thin bar
+          context.fillRect(x + 3, y - barHeight2 / 2, barWidth2, barHeight2);
+          
+          // Second thick bar
+          context.fillRect(x + 8, y - barHeight2 / 2, barWidth2 * 2, barHeight2);
+          break;
+          
+        case 'text':
+          // Draw white background for text
+          if (annotation.text) {
+            context.font = '14px Arial';
+            const textMetrics = context.measureText(annotation.text);
+            const textWidth = textMetrics.width;
+            const textHeight = 16;
+            
+            context.fillStyle = '#ffffff';
+            context.fillRect(x - 2, y - textHeight + 2, textWidth + 4, textHeight);
+            
+            context.fillStyle = '#000000';
+            context.fillText(annotation.text, x, y);
+          }
+          break;
+      }
     });
   };
 
@@ -369,6 +516,37 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
       setPendingOrigin(null);
       setInsertMode('none');
       toast("Marcador creat correctament!");
+      return;
+    }
+    
+    // Check if we're in annotation mode
+    if (selectedAnnotationType) {
+      if (selectedAnnotationType === 'text') {
+        // For text annotations, prompt for text
+        const text = prompt("Introdueix el text de l'anotació:");
+        if (text) {
+          const newAnnotation: Annotation = {
+            id: Date.now().toString(),
+            type: 'text',
+            x: relativeX,
+            y: relativeY,
+            text
+          };
+          setAnnotations(prev => [...prev, newAnnotation]);
+          toast("Anotació de text afegida!");
+        }
+      } else {
+        // For symbol annotations
+        const newAnnotation: Annotation = {
+          id: Date.now().toString(),
+          type: selectedAnnotationType,
+          x: relativeX,
+          y: relativeY
+        };
+        setAnnotations(prev => [...prev, newAnnotation]);
+        toast("Anotació afegida!");
+      }
+      setSelectedAnnotationType(null);
       return;
     }
     
@@ -468,6 +646,27 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
     toast("Marcador eliminat");
   };
 
+  const startAnnotation = (type: Annotation['type']) => {
+    setSelectedAnnotationType(type);
+    setInsertMode('none'); // Cancel marker insertion if active
+    setPendingOrigin(null);
+    if (type === 'text') {
+      toast("Clica on vols afegir el text");
+    } else {
+      toast("Clica on vols afegir l'anotació");
+    }
+  };
+
+  const cancelAnnotation = () => {
+    setSelectedAnnotationType(null);
+    toast("Inserció d'anotació cancel·lada");
+  };
+
+  const deleteAnnotation = (annotationId: string) => {
+    setAnnotations(prev => prev.filter(annotation => annotation.id !== annotationId));
+    toast("Anotació eliminada");
+  };
+
   const renderScrollView = async () => {
     if (!pdf || !canvasRef.current) return;
 
@@ -526,7 +725,7 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
 
   return (
     <div className="flex h-screen bg-music-surface">
-      {/* Floating Menu Button */}
+      {/* Floating Menu Button for Markers */}
       <Button
         variant="outline"
         size="sm"
@@ -534,6 +733,16 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
         onClick={() => setIsMarkersMenuOpen(!isMarkersMenuOpen)}
       >
         {isMarkersMenuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
+      </Button>
+
+      {/* Floating Menu Button for Annotations */}
+      <Button
+        variant="outline"
+        size="sm"
+        className="fixed top-16 right-4 z-50 shadow-lg"
+        onClick={() => setIsAnnotationsMenuOpen(!isAnnotationsMenuOpen)}
+      >
+        {isAnnotationsMenuOpen ? <X className="h-4 w-4" /> : <Edit3 className="h-4 w-4" />}
       </Button>
 
       {/* Markers Menu */}
@@ -580,6 +789,76 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
                       variant="ghost"
                       size="sm"
                       onClick={() => deleteMarker(marker.id)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Annotations Menu */}
+      <div className={`fixed left-0 top-0 h-full w-80 bg-card border-r shadow-lg transition-transform duration-300 z-40 ${
+        isAnnotationsMenuOpen ? 'translate-x-0' : '-translate-x-full'
+      }`}>
+        <div className="p-4 border-b">
+          <h3 className="font-semibold">Anotacions</h3>
+        </div>
+        
+        <div className="p-4 space-y-4">
+          {/* Annotation Type Buttons */}
+          <div className="space-y-2">
+            <h4 className="text-sm font-medium">Afegir anotació:</h4>
+            {selectedAnnotationType ? (
+              <div className="space-y-2">
+                <div className="text-sm text-muted-foreground">
+                  Clica on vols col·locar l'anotació
+                </div>
+                <Button onClick={cancelAnnotation} variant="outline" className="w-full">
+                  Cancel·lar
+                </Button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                <Button onClick={() => startAnnotation('oval')} variant="outline" size="sm">
+                  Oval
+                </Button>
+                <Button onClick={() => startAnnotation('wholeNote')} variant="outline" size="sm">
+                  Rodona
+                </Button>
+                <Button onClick={() => startAnnotation('repeatStart')} variant="outline" size="sm">
+                  ||:
+                </Button>
+                <Button onClick={() => startAnnotation('repeatEnd')} variant="outline" size="sm">
+                  :||
+                </Button>
+                <Button onClick={() => startAnnotation('text')} variant="outline" size="sm" className="col-span-2">
+                  <Type className="h-4 w-4 mr-2" />
+                  Text
+                </Button>
+              </div>
+            )}
+          </div>
+
+          {/* Annotations List */}
+          <div className="space-y-2">
+            <h4 className="text-sm font-medium">Anotacions existents:</h4>
+            {annotations.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No hi ha anotacions</p>
+            ) : (
+              <div className="space-y-2 max-h-96 overflow-y-auto">
+                {annotations.map(annotation => (
+                  <div key={annotation.id} className="flex items-center justify-between p-2 bg-muted rounded">
+                    <div className="text-sm">
+                      <div>{annotation.type === 'text' ? annotation.text : annotation.type}</div>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => deleteAnnotation(annotation.id)}
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>

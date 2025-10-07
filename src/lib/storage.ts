@@ -34,9 +34,24 @@ interface Marker {
   colorIndex: number;
 }
 
+interface Annotation {
+  id: string;
+  type: 'oval' | 'wholeNote' | 'repeatStart' | 'repeatEnd' | 'text';
+  x: number; // relative position (0-1)
+  y: number; // relative position (0-1)
+  text?: string; // for text annotations
+}
+
+interface StoredAnnotations {
+  id: string;
+  fileName: string;
+  annotations: Annotation[];
+  lastModified: number;
+}
+
 class MuseScrollStorage {
   private dbName = 'musescroll-storage';
-  private dbVersion = 1;
+  private dbVersion = 2;
   private db: IDBDatabase | null = null;
 
   async init(): Promise<void> {
@@ -74,6 +89,12 @@ class MuseScrollStorage {
         if (!db.objectStoreNames.contains('folders')) {
           const foldersStore = db.createObjectStore('folders', { keyPath: 'id' });
           foldersStore.createIndex('order', 'order', { unique: false });
+        }
+
+        // Create annotations store
+        if (!db.objectStoreNames.contains('annotations')) {
+          const annotationsStore = db.createObjectStore('annotations', { keyPath: 'id' });
+          annotationsStore.createIndex('fileName', 'fileName', { unique: true });
         }
       };
     });
@@ -325,6 +346,60 @@ class MuseScrollStorage {
       const transaction = this.db!.transaction(['markers'], 'readwrite');
       const store = transaction.objectStore('markers');
       const id = `markers-${fileName}`;
+      const request = store.delete(id);
+
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  // Annotations operations
+  async saveAnnotations(fileName: string, annotations: Annotation[]): Promise<void> {
+    await this.ensureInitialized();
+
+    const id = `annotations-${fileName}`;
+    const storedAnnotations: StoredAnnotations = {
+      id,
+      fileName,
+      annotations,
+      lastModified: Date.now()
+    };
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(['annotations'], 'readwrite');
+      const store = transaction.objectStore('annotations');
+      const request = store.put(storedAnnotations);
+
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  async getAnnotations(fileName: string): Promise<Annotation[]> {
+    await this.ensureInitialized();
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(['annotations'], 'readonly');
+      const store = transaction.objectStore('annotations');
+      const id = `annotations-${fileName}`;
+      const request = store.get(id);
+
+      request.onsuccess = () => {
+        const result = request.result as StoredAnnotations | undefined;
+        resolve(result?.annotations || []);
+      };
+
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  async deleteAnnotations(fileName: string): Promise<void> {
+    await this.ensureInitialized();
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(['annotations'], 'readwrite');
+      const store = transaction.objectStore('annotations');
+      const id = `annotations-${fileName}`;
       const request = store.delete(id);
 
       request.onsuccess = () => resolve();
