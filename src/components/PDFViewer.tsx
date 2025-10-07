@@ -43,9 +43,6 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
   const [autoScrollSpeed, setAutoScrollSpeed] = useState(0.5); // pixels per frame (0.1-2)
   const [scrollOriginY, setScrollOriginY] = useState<number | null>(null);
   const [autoScrollMenuOpen, setAutoScrollMenuOpen] = useState(false);
-  const [dragPosition, setDragPosition] = useState({ x: window.innerWidth - 100, y: window.innerHeight - 200 });
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   
   // Marker states
   const [markers, setMarkers] = useState<Marker[]>([]);
@@ -148,32 +145,6 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
       cancelAnimationFrame(animationFrameId);
     };
   }, [isAutoScrolling, autoScrollSpeed, viewMode]);
-
-  // Global mouse handlers for dragging
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (isDragging) {
-        setDragPosition({
-          x: e.clientX - dragOffset.x,
-          y: e.clientY - dragOffset.y
-        });
-      }
-    };
-
-    const handleMouseUp = () => {
-      setIsDragging(false);
-    };
-
-    if (isDragging) {
-      window.addEventListener('mousemove', handleMouseMove);
-      window.addEventListener('mouseup', handleMouseUp);
-    }
-
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [isDragging, dragOffset]);
 
   const renderCurrentView = async () => {
     if (!pdf || !canvasRef.current) return;
@@ -731,33 +702,13 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
 
         {/* Auto-scroll controls - only in scroll mode */}
         {viewMode === 'scroll' && (
-          <div 
-            className="fixed z-30"
-            style={{
-              left: `${dragPosition.x}px`,
-              top: `${dragPosition.y}px`,
-            }}
-          >
-            {/* Draggable button */}
+          <div className="fixed top-4 left-4 z-30">
             <div className="flex flex-col items-center gap-2">
               <Button
                 variant={isAutoScrolling ? "default" : "outline"}
                 size="sm"
-                onMouseDown={(e) => {
-                  setIsDragging(true);
-                  setDragOffset({
-                    x: e.clientX - dragPosition.x,
-                    y: e.clientY - dragPosition.y
-                  });
-                  e.preventDefault();
-                }}
-                onClick={(e) => {
-                  if (!isDragging) {
-                    setAutoScrollMenuOpen(!autoScrollMenuOpen);
-                  }
-                }}
+                onClick={() => setAutoScrollMenuOpen(!autoScrollMenuOpen)}
                 className="w-12 h-12 shadow-lg"
-                style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
               >
                 {isAutoScrolling ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
               </Button>
