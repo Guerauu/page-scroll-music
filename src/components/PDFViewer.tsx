@@ -166,7 +166,29 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
     } else {
       renderScrollView();
     }
-  }, [pdf, currentView, scale, markers, viewMode]);
+  }, [pdf, currentView, scale, markers, viewMode, annotations]);
+
+  // Re-render scroll view on scroll events
+  useEffect(() => {
+    if (viewMode !== 'scroll' || !containerRef.current) return;
+
+    const container = containerRef.current;
+    let timeoutId: NodeJS.Timeout;
+
+    const handleScroll = () => {
+      // Debounce scroll events
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        renderScrollView();
+      }, 100);
+    };
+
+    container.addEventListener('scroll', handleScroll);
+    return () => {
+      container.removeEventListener('scroll', handleScroll);
+      clearTimeout(timeoutId);
+    };
+  }, [viewMode, pdf, scale, markers, annotations]);
 
   // Auto-scroll effect
   useEffect(() => {
@@ -668,11 +690,12 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
   };
 
   const renderScrollView = async () => {
-    if (!pdf || !canvasRef.current) return;
+    if (!pdf || !canvasRef.current || !containerRef.current) return;
 
     try {
       const canvas = canvasRef.current;
       const context = canvas.getContext("2d");
+      const container = containerRef.current;
       
       if (!context) return;
 
@@ -688,8 +711,18 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
       context.fillStyle = "#ffffff";
       context.fillRect(0, 0, canvas.width, canvas.height);
 
-      // Render all pages vertically
-      for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+      // Calculate which pages are visible
+      const scrollTop = container.scrollTop;
+      const containerHeight = container.clientHeight;
+      const pageHeight = viewport.height;
+      
+      // Add buffer to render pages slightly outside viewport
+      const buffer = 2;
+      const firstVisiblePage = Math.max(1, Math.floor(scrollTop / pageHeight) - buffer + 1);
+      const lastVisiblePage = Math.min(totalPages, Math.ceil((scrollTop + containerHeight) / pageHeight) + buffer);
+
+      // Render only visible pages
+      for (let pageNum = firstVisiblePage; pageNum <= lastVisiblePage; pageNum++) {
         const page = await pdf.getPage(pageNum);
         const pageViewport = page.getViewport({ scale });
         
