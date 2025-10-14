@@ -65,6 +65,12 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
   const [editingAnnotation, setEditingAnnotation] = useState<string | null>(null);
   const [annotationText, setAnnotationText] = useState('');
 
+  // Scroll mode per-page rendering (avoid giant canvas limits)
+  const pageSizeRef = useRef<{ width: number; height: number } | null>(null);
+  const pageCanvasRefs = useRef<Map<number, HTMLCanvasElement | null>>(new Map());
+  const renderedPagesRef = useRef<Set<number>>(new Set());
+  const [pagesArray, setPagesArray] = useState<number[]>([]);
+
   // Calculate total views: for N pages, we have 2*N - 1 views
   const getTotalViews = () => totalPages > 0 ? 2 * totalPages - 1 : 0;
 
@@ -163,32 +169,63 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
     if (!pdf || !canvasRef.current) return;
     if (viewMode === 'split') {
       renderCurrentView();
-    } else {
-      renderScrollView();
     }
   }, [pdf, currentView, scale, markers, viewMode, annotations]);
 
-  // Re-render scroll view on scroll events
+  // Prepare pages array when PDF or totalPages changes
   useEffect(() => {
-    if (viewMode !== 'scroll' || !containerRef.current) return;
+    if (!pdf || totalPages === 0) return;
+    setPagesArray(Array.from({ length: totalPages }, (_, i) => i + 1));
+  }, [pdf, totalPages]);
 
-    const container = containerRef.current;
-    let timeoutId: NodeJS.Timeout;
-
-    const handleScroll = () => {
-      // Debounce scroll events
-      clearTimeout(timeoutId);
-      timeoutId = setTimeout(() => {
-        renderScrollView();
-      }, 100);
+  // Compute page size for current scale
+  useEffect(() => {
+    let cancelled = false;
+    const compute = async () => {
+      if (!pdf) return;
+      const first = await pdf.getPage(1);
+      const vp = first.getViewport({ scale });
+      if (!cancelled) pageSizeRef.current = { width: vp.width, height: vp.height };
     };
+    compute();
+    return () => { cancelled = true; };
+  }, [pdf, scale]);
 
-    container.addEventListener('scroll', handleScroll);
-    return () => {
-      container.removeEventListener('scroll', handleScroll);
-      clearTimeout(timeoutId);
-    };
-  }, [viewMode, pdf, scale, markers, annotations]);
+  // Lazy-render pages in scroll mode with IntersectionObserver
+  useEffect(() => {
+    if (viewMode !== 'scroll' || !containerRef.current || !pdf) return;
+
+    // Clear rendered set on scale change
+    renderedPagesRef.current.clear();
+
+    const root = containerRef.current;
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(async (entry) => {
+        const el = entry.target as HTMLCanvasElement;
+        const pageNum = Number(el.dataset.page);
+        if (!entry.isIntersecting || !pageNum || renderedPagesRef.current.has(pageNum)) return;
+        try {
+          const page = await pdf.getPage(pageNum);
+          const vp = page.getViewport({ scale });
+          el.width = vp.width;
+          el.height = vp.height;
+          const ctx = el.getContext('2d');
+          if (!ctx) return;
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, el.width, el.height);
+          await page.render({ canvasContext: ctx, viewport: vp, canvas: el }).promise;
+          renderedPagesRef.current.add(pageNum);
+        } catch (e) {
+          console.error('Error rendering page', pageNum, e);
+        }
+      });
+    }, { root, rootMargin: '600px 0px', threshold: 0.01 });
+
+    // Observe current canvases
+    pageCanvasRefs.current.forEach((el) => { if (el) observer.observe(el); });
+
+    return () => observer.disconnect();
+  }, [viewMode, pdf, scale, totalPages]);
 
   // Auto-scroll effect
   useEffect(() => {
@@ -994,19 +1031,32 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
             <p className="text-muted-foreground">Carregant partitura...</p>
           </div>
         ) : (
-          <div className="relative">
-            <canvas
-              ref={canvasRef}
-              onClick={viewMode === 'split' ? handleCanvasClick : undefined}
-              className="max-w-full max-h-full shadow-music-medium rounded-lg transition-transform hover:scale-[1.02]"
-              style={{ 
-                border: "1px solid hsl(var(--border))",
-                cursor: viewMode === 'split' ? 'pointer' : 'default'
-              }}
-            />
-            {/* Divider line to show halves - only in split mode */}
-            {viewMode === 'split' && (
-              <div className="absolute top-1/2 left-0 right-0 h-px bg-primary/20 pointer-events-none" />
+          <div className="relative w-full">
+            {viewMode === 'split' ? (
+              <>
+                <canvas
+                  ref={canvasRef}
+                  onClick={handleCanvasClick}
+                  className="max-w-full max-h-full shadow-music-medium rounded-lg transition-transform hover:scale-[1.02]"
+                  style={{ 
+                    border: "1px solid hsl(var(--border))",
+                    cursor: 'pointer'
+                  }}
+                />
+                <div className="absolute top-1/2 left-0 right-0 h-px bg-primary/20 pointer-events-none" />
+              </>
+            ) : (
+              <div className="flex flex-col items-center gap-4">
+                {pagesArray.map((pageNum) => (
+                  <canvas
+                    key={pageNum}
+                    data-page={pageNum}
+                    ref={(el) => { if (el) pageCanvasRefs.current.set(pageNum, el); }}
+                    className="max-w-full shadow-music-medium rounded-lg"
+                    style={{ border: "1px solid hsl(var(--border))" }}
+                  />
+                ))}
+              </div>
             )}
           </div>
           )}
