@@ -233,10 +233,18 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
 
     const container = containerRef.current;
     let animationFrameId: number;
+    let accumulatedScroll = 0; // Accumulated scroll for smooth low-speed scrolling
 
     const scroll = () => {
       if (container) {
-        container.scrollTop += autoScrollSpeed;
+        accumulatedScroll += autoScrollSpeed;
+        
+        // Only apply scroll when we have at least 1 pixel to scroll
+        if (accumulatedScroll >= 1) {
+          const scrollAmount = Math.floor(accumulatedScroll);
+          container.scrollTop += scrollAmount;
+          accumulatedScroll -= scrollAmount;
+        }
         
         // Stop if we reach the bottom
         if (container.scrollTop + container.clientHeight >= container.scrollHeight) {
@@ -1064,7 +1072,7 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
 
         {/* Auto-scroll controls - only in scroll mode */}
         {viewMode === 'scroll' && (
-          <div className="fixed top-4 left-4 z-30">
+          <div className="fixed bottom-4 left-4 z-30">
             <div className="flex flex-col items-center gap-2">
               <Button
                 variant={isAutoScrolling ? "default" : "outline"}
@@ -1078,7 +1086,7 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
               {/* Speed control menu */}
               {autoScrollMenuOpen && (
                 <div 
-                  className="bg-card p-3 rounded-lg shadow-lg border flex flex-col items-center gap-2"
+                  className="bg-card p-3 rounded-lg shadow-lg border flex flex-col items-center gap-2 mb-2"
                   onClick={(e) => e.stopPropagation()}
                 >
                   <span className="text-xs font-medium">Velocitat</span>
