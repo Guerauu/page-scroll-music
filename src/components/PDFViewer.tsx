@@ -29,6 +29,7 @@ interface Annotation {
   x: number; // relative position (0-1)
   y: number; // relative position (0-1)
   text?: string; // for text annotations
+  page: number; // page number (1-based)
 }
 
 interface PDFViewerProps {
@@ -214,6 +215,81 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
           ctx.fillStyle = '#ffffff';
           ctx.fillRect(0, 0, el.width, el.height);
           await page.render({ canvasContext: ctx, viewport: vp, canvas: el }).promise;
+          
+          // Draw annotations for this page
+          const pageAnnotations = annotations.filter(ann => ann.page === pageNum);
+          const markerHeight = Math.min(37.8, el.height * 0.1);
+          const annotationSize = markerHeight / 6;
+          
+          pageAnnotations.forEach((annotation) => {
+            const x = annotation.x * el.width;
+            const y = annotation.y * el.height;
+            
+            ctx.fillStyle = '#ffffff';
+            ctx.strokeStyle = '#000000';
+            ctx.lineWidth = 2;
+            
+            switch (annotation.type) {
+              case 'oval':
+                // Rodona amb silueta negra i dins blanc
+                ctx.fillStyle = '#FFFFFF';
+                ctx.strokeStyle = '#000000';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(x, y, 15, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+                break;
+              
+              case 'wholeNote':
+                // Rodona completament negra
+                ctx.fillStyle = '#000000';
+                ctx.beginPath();
+                ctx.arc(x, y, 15, 0, Math.PI * 2);
+                ctx.fill();
+                break;
+              
+              case 'repeatStart':
+                const barWidth = 2;
+                const barHeight = annotationSize * 1.5;
+                const dotRadius = 2;
+                ctx.fillStyle = '#000000';
+                ctx.fillRect(x - 8, y - barHeight / 2, barWidth * 2, barHeight);
+                ctx.fillRect(x - 3, y - barHeight / 2, barWidth, barHeight);
+                ctx.beginPath();
+                ctx.arc(x + 3, y - 4, dotRadius, 0, Math.PI * 2);
+                ctx.arc(x + 3, y + 4, dotRadius, 0, Math.PI * 2);
+                ctx.fill();
+                break;
+              
+              case 'repeatEnd':
+                const barWidth2 = 2;
+                const barHeight2 = annotationSize * 1.5;
+                const dotRadius2 = 2;
+                ctx.fillStyle = '#000000';
+                ctx.beginPath();
+                ctx.arc(x - 3, y - 4, dotRadius2, 0, Math.PI * 2);
+                ctx.arc(x - 3, y + 4, dotRadius2, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillRect(x + 3, y - barHeight2 / 2, barWidth2, barHeight2);
+                ctx.fillRect(x + 8, y - barHeight2 / 2, barWidth2 * 2, barHeight2);
+                break;
+              
+              case 'text':
+                if (annotation.text) {
+                  ctx.font = '14px Arial';
+                  const textMetrics = ctx.measureText(annotation.text);
+                  const textWidth = textMetrics.width;
+                  const textHeight = 16;
+                  ctx.fillStyle = '#ffffff';
+                  ctx.fillRect(x - 2, y - textHeight + 2, textWidth + 4, textHeight);
+                  ctx.fillStyle = '#000000';
+                  ctx.fillText(annotation.text, x, y);
+                }
+                break;
+            }
+          });
+          
           renderedPagesRef.current.add(pageNum);
         } catch (e) {
           console.error('Error rendering page', pageNum, e);
@@ -225,7 +301,7 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
     pageCanvasRefs.current.forEach((el) => { if (el) observer.observe(el); });
 
     return () => observer.disconnect();
-  }, [viewMode, pdf, scale, totalPages]);
+  }, [viewMode, pdf, scale, totalPages, annotations]);
 
   // Auto-scroll effect
   useEffect(() => {
@@ -349,8 +425,8 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
       // Draw markers for current view
       renderMarkers(context, canvas.width, canvas.height);
       
-      // Draw annotations for current view
-      renderAnnotations(context, canvas.width, canvas.height);
+      // Draw annotations for current view - pass topPage and bottomPage
+      renderAnnotations(context, canvas.width, canvas.height, topPage, bottomPage);
 
     } catch (error) {
       console.error("Error rendering view:", error);
@@ -417,12 +493,17 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
     });
   };
 
-  const renderAnnotations = (context: CanvasRenderingContext2D, canvasWidth: number, canvasHeight: number) => {
+  const renderAnnotations = (context: CanvasRenderingContext2D, canvasWidth: number, canvasHeight: number, topPage: number, bottomPage: number) => {
     // Marker height for reference (1cm ≈ 37.8 pixels)
     const markerHeight = Math.min(37.8, canvasHeight * 0.1);
     const annotationSize = markerHeight / 6; // 1/6 of marker height
     
-    annotations.forEach((annotation) => {
+    // Filter annotations for pages visible in current view
+    const pageAnnotations = annotations.filter(annotation => 
+      annotation.page === topPage || annotation.page === bottomPage
+    );
+    
+    pageAnnotations.forEach((annotation) => {
       const x = annotation.x * canvasWidth;
       const y = annotation.y * canvasHeight;
       
@@ -588,6 +669,20 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
     
     // Check if we're in annotation mode
     if (selectedAnnotationType) {
+      // Determine current page based on view mode
+      let currentPage = 1;
+      if (viewMode === 'split') {
+        const config = getViewConfiguration(currentView);
+        // Use the page where the click occurred (top or bottom half)
+        currentPage = relativeY < 0.5 ? config.topPage : config.bottomPage;
+      } else {
+        // In scroll mode, get page from canvas data-page attribute
+        const pageNum = Number(canvas.dataset.page);
+        if (pageNum) {
+          currentPage = pageNum;
+        }
+      }
+      
       if (selectedAnnotationType === 'text') {
         // For text annotations, prompt for text
         const text = prompt("Introdueix el text de l'anotació:");
@@ -597,7 +692,8 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
             type: 'text',
             x: relativeX,
             y: relativeY,
-            text
+            text,
+            page: currentPage
           };
           setAnnotations(prev => [...prev, newAnnotation]);
           toast("Anotació de text afegida!");
@@ -608,7 +704,8 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
           id: Date.now().toString(),
           type: selectedAnnotationType,
           x: relativeX,
-          y: relativeY
+          y: relativeY,
+          page: currentPage
         };
         setAnnotations(prev => [...prev, newAnnotation]);
         toast("Anotació afegida!");
@@ -902,10 +999,10 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
             ) : (
               <div className="grid grid-cols-2 gap-2">
                 <Button onClick={() => startAnnotation('oval')} variant="outline" size="sm">
-                  Oval
+                  Rodona Blanca
                 </Button>
                 <Button onClick={() => startAnnotation('wholeNote')} variant="outline" size="sm">
-                  Rodona
+                  Rodona Negra
                 </Button>
                 <Button onClick={() => startAnnotation('repeatStart')} variant="outline" size="sm">
                   ||:
@@ -1060,8 +1157,12 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
                     key={pageNum}
                     data-page={pageNum}
                     ref={(el) => { if (el) pageCanvasRefs.current.set(pageNum, el); }}
+                    onClick={handleCanvasClick}
                     className="max-w-full shadow-music-medium rounded-lg"
-                    style={{ border: "1px solid hsl(var(--border))" }}
+                    style={{ 
+                      border: "1px solid hsl(var(--border))",
+                      cursor: selectedAnnotationType ? 'crosshair' : 'default'
+                    }}
                   />
                 ))}
               </div>

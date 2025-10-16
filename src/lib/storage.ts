@@ -40,6 +40,7 @@ interface Annotation {
   x: number; // relative position (0-1)
   y: number; // relative position (0-1)
   text?: string; // for text annotations
+  page: number; // page number (1-based)
 }
 
 interface StoredAnnotations {
