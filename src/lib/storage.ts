@@ -41,6 +41,7 @@ interface Annotation {
   y: number; // relative position (0-1)
   text?: string; // for text annotations
   page: number; // page number (1-based)
+  isTop?: boolean; // true if in top half, false if in bottom half (for split mode)
 }
 
 interface StoredAnnotations {

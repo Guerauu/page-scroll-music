@@ -30,6 +30,7 @@ interface Annotation {
   y: number; // relative position (0-1)
   text?: string; // for text annotations
   page: number; // page number (1-based)
+  isTop?: boolean; // true if in top half, false if in bottom half (for split mode)
 }
 
 interface PDFViewerProps {
@@ -498,9 +499,11 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
     const markerHeight = Math.min(37.8, canvasHeight * 0.1);
     const annotationSize = markerHeight / 6; // 1/6 of marker height
     
-    // Filter annotations for pages visible in current view
+    // Filter annotations based on which half is visible
+    // Show annotation if: (page matches topPage AND isTop=true) OR (page matches bottomPage AND isTop=false)
     const pageAnnotations = annotations.filter(annotation => 
-      annotation.page === topPage || annotation.page === bottomPage
+      (annotation.page === topPage && annotation.isTop === true) || 
+      (annotation.page === bottomPage && annotation.isTop === false)
     );
     
     pageAnnotations.forEach((annotation) => {
@@ -669,18 +672,23 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
     
     // Check if we're in annotation mode
     if (selectedAnnotationType) {
-      // Determine current page based on view mode
+      // Determine current page and position based on view mode
       let currentPage = 1;
+      let isTop: boolean | undefined = undefined;
+      
       if (viewMode === 'split') {
         const config = getViewConfiguration(currentView);
         // Use the page where the click occurred (top or bottom half)
-        currentPage = relativeY < 0.5 ? config.topPage : config.bottomPage;
+        const isTopHalf = relativeY < 0.5;
+        currentPage = isTopHalf ? config.topPage : config.bottomPage;
+        isTop = isTopHalf;
       } else {
         // In scroll mode, get page from canvas data-page attribute
         const pageNum = Number(canvas.dataset.page);
         if (pageNum) {
           currentPage = pageNum;
         }
+        // In scroll mode, isTop is undefined (not used)
       }
       
       if (selectedAnnotationType === 'text') {
@@ -693,7 +701,8 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
             x: relativeX,
             y: relativeY,
             text,
-            page: currentPage
+            page: currentPage,
+            isTop
           };
           setAnnotations(prev => [...prev, newAnnotation]);
           toast("Anotació de text afegida!");
@@ -705,7 +714,8 @@ export const PDFViewer = ({ file, onClose }: PDFViewerProps) => {
           type: selectedAnnotationType,
           x: relativeX,
           y: relativeY,
-          page: currentPage
+          page: currentPage,
+          isTop
         };
         setAnnotations(prev => [...prev, newAnnotation]);
         toast("Anotació afegida!");
